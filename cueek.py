@@ -434,7 +434,7 @@ class Cue:
         trknum = 1
         for line in src:
             line = line.rstrip('\r\n')
-            line = unicode(line, self.encoding)
+            line = line.decode(self.encoding)
             if line.find('PERFORMER') != -1:
                 metadata = re.sub('\s*PERFORMER\s+', '', line)#.strip('"')
                 metadata = str_.stripquotes(metadata)
@@ -732,12 +732,22 @@ if __name__ == '__main__':
     files_ = Files()
 
     cuename = os.path.abspath(argv_.args[0])
+    io_.fname = cuename
     cuedir = os.path.split(cuename)[0]
     os.chdir(cuedir)
 
     if argv_.options.charmap:
         cue_.encoding = argv_.options.charmap
-    io_.fname = cuename; orig_cue = io_.tryfile()
+    else:
+        try:
+            import chardet
+            orig_cue = io_.tryfile()
+            data = orig_cue.read()
+            cue_.encoding = chardet.detect(data)['encoding']
+            orig_cue.close()
+        except ImportError:
+            pass
+    orig_cue = io_.tryfile()
     cue_.parse(orig_cue)
     cue_.type()
 
