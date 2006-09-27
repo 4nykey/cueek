@@ -24,21 +24,16 @@ single_file:    %albumartist% - %album%|lower
 #   [extension]
 #   decode: <commandline>   where '%f' is input file
 #   encode: <commandline>   where '%f' is output file
-#                           %m - (optional) metadata block
-#   tag: <switch>           encoder's switch to write metadata, with all
-#                           needed spaces (e.g. ' --tag ', or ' --tag=')
 #   rg: <commandline>       format-specific replay-gain scanner
 
 [flac]
 decode: flac -dcs %f
-encode: flac -fs %m -o %f -
-tag:    ' -T '
+encode: flac -fs -o %f -
 rg:     metaflac --add-replay-gain %f
 
 [wv]
 decode: wvunpack -q -o - %f
-encode: wavpack -myiq %m -o %f -
-tag:    ' -w '
+encode: wavpack -myiq -o %f -
 rg:     wvgain -aq %f
 
 [ape]
@@ -133,7 +128,7 @@ class Config:
         sch = ''
         for s in spl:
             if s in ('artist', 'title'):
-                sch = sch + meta_.tag(t, s)
+                sch = sch + meta_.put_missing(t, s)
             elif s == 'tracknumber':
                 sch = sch + str_.leadzero(t)
             elif s == 'albumartist':
@@ -206,7 +201,7 @@ class Meta:
         except KeyError:
             v = 0
         return v
-    def tag(self, t, e):
+    def put_missing(self, t, e):
         if self.get(t, e):
             result = self.get(t, e)
         elif e == 'artist':
@@ -214,35 +209,28 @@ class Meta:
         else:
             result = 'untitled'
         return result
-    def constr(self, t, n):
-        s = ''
-        t = t.strip("'\"")
-        if cue_.is_va:
-            s = t + '"ALBUMARTIST=' + self.data['albumartist'].lower() + '"'
-        s = s + t + '"ARTIST=' + self.tag(n, 'artist').lower() + '"' + t + \
-            '"ALBUM=' + self.data['album'].lower() + '"'
-        if cue_.is_singlefile:
-            s = s + t + '"TITLE=' + self.tag(n, 'title').lower() + '"'
-            if argv_.format == 'mpc':
-                s = s + t + 'TRACK=' + str(n)
-            else:
-                s = s + t + 'TRACKNUMBER=' + str(n)
-        if argv_.options.year:
-            if argv_.format == 'mpc':
-                s = s + t + '"YEAR=' + argv_.options.year + '"'
-            else:
-                s = s + t + '"DATE=' + argv_.options.year + '"'
-        if argv_.options.discnumber: s = s + t + '"DISCNUMBER=' + \
-            argv_.options.discnumber + '"'
-        return s
-    def external_tag(self):
-        if not cfg_.read('tag', 1) and \
-        cfg_.read('ext_tag', 1) and cfg_.read('ext_tag_switch', 1):
-            ext_tag_switch = cfg_.read('ext_tag_switch')
-            ext_tag_str = cfg_.read('ext_tag') + \
-                self.constr(ext_tag_switch, io_.trknum) + ' ' + io_.fname
-            os.system(ext_tag_str.encode(encoding))
-
+    def tag(self, n = 0):
+        retcode = os.wait() # wait for encoder to finish, so mutagen can...
+        f = File(io_.fname.strip('\'"')) # ...identify the file type
+        try:
+            if cue_.is_va:
+                f['ALBUMARTIST'] = self.data['albumartist'].lower()
+            f['ARTIST'] = self.put_missing(n, 'artist').lower()
+            f['ALBUM'] = self.data['album'].lower()
+            if cue_.is_singlefile:
+                f['TITLE'] = self.put_missing(n, 'title').lower()
+                f['TRACKNUMBER'] = str(n)
+                if argv_.format == 'mpc':
+                    f['TRACK'] = str(n)
+            if argv_.options.year:
+                f['DATE'] = argv_.options.year
+                if argv_.format == 'mpc':
+                    f['YEAR'] = argv_.options.year
+            if argv_.options.discnumber:
+                f['DISCNUMBER'] = argv_.options.discnumber
+            f.save()
+        except AttributeError:
+            pass
     def filename(self, t, single=0):
         cfg_.section = 'filenames'
         if single:
@@ -257,13 +245,13 @@ class Meta:
                     f = cfg_.scheme(t, 'mult_files_va')
                 else:
                     s = str_.leadzero(t, 2) + ' - ' + \
-                        self.tag(t, 'artist') + ' - ' + self.tag(t, 'title')
+                        self.put_missing(t, 'artist') + ' - ' + self.put_missing(t, 'title')
                     f = s.lower()
             else:
                 if cfg_.read('mult_files', 1):
                     f = cfg_.scheme(t, 'mult_files')
                 else:
-                    s = str_.leadzero(t, 2) + ' - ' + self.tag(t, 'title')
+                    s = str_.leadzero(t, 2) + ' - ' + self.put_missing(t, 'title')
                     f = s.lower()
         f = re.sub('[*":/\\\?]', '_', f)
         f = f + '.' + argv_.format
@@ -291,19 +279,18 @@ class IO:
         ext = fn.split('.')[-1].lower()
         cfg_.section = ext
         if ext == 'wav':
-            f = fn
+            r = fn
         elif cfg_.read('decode', 1):
             fn = str_.enclose('"', fn)
             s = cfg_.read('decode').replace('%f', fn)
-            pipe = os.popen3(s)
-            pipe[0].close
-            f = pipe[1]
+            w, r, e = os.popen3(s)
+            w.close
         else:
             errstr = 'cannot decode: ' + fn + \
                 ', please set decoder in config file'
             bailout(errstr)
         try:
-            f = wave.open(f, 'rb')
+            r = wave.open(r, 'rb')
         except IOError, (errno, strerror):
             errstr = 'cannot open ' + fn + ' for reading' + \
             ': %s' % (strerror)
@@ -312,32 +299,28 @@ class IO:
             errstr = 'cannot open wave file ' + fn + ': %s' % (strerror)
             bailout(errstr)
         except EOFError:
-            errstr = 'cannot decode ' + fn + ': ' + pipe[2].read().strip()
-            pipe[2].close
+            errstr = 'cannot decode ' + fn + ': ' + e.read().strip()
+            e.close
             bailout(errstr)
-        return f
+        return r
     def wav_wr(self):
         cfg_.section = argv_.format
         tag_str = ''
         if argv_.format == 'wav':
-            f = self.tryfile(1)
+            w = self.tryfile(1)
         elif cfg_.read('encode', 1):
             self.fname = str_.enclose('"', self.fname)
             s = cfg_.read('encode')
-            if cfg_.read('tag', 1):
-                tag_switch = cfg_.read('tag')
-                tag_str = meta_.constr(tag_switch, self.trknum)
-            s = s.replace('%f', self.fname).replace('%m', tag_str)
+            s = s.replace('%f', self.fname)
             s = s.encode(encoding)
-            pipe = os.popen3(s)
-            pipe[1].close
-            pipe[2].close
-            f = pipe[0]
+            w, r, e = os.popen3(s)
+            r.close()
+            e.close()
         else:
             errstr = 'cannot encode to ' + argv_.format + \
                 ', please set encoder in config file'
             bailout(errstr)
-        return f
+        return w
 
 class Audio:
     #smpl_freq = 44100
@@ -393,7 +376,7 @@ class Audio:
                 if self.hdr_frnum: self.hdr_frnum = 0 # write header only once
                 self.fin.close()
             self.fout.close()
-            meta_.external_tag()
+            meta_.tag()
         elif isinstance(_fout, list): # splitting to multiple files
             io_.fname = _fin; self.fin = io_.wav_rd()
             self.get_params()
@@ -413,7 +396,7 @@ class Audio:
 
                 self.wr_chunks()
                 self.fout.close()
-                meta_.external_tag()
+                meta_.tag(x+1)
             self.fin.close()
 
 def bailout(msg):
@@ -759,9 +742,13 @@ if __name__ == '__main__':
     cue_.save()
 
     if not argv_.options.nowrite:
+        try:
+            from mutagen import File
+        except ImportError:
+            pass
         files_.write()
-    if not argv_.options.nowrite and not argv_.options.nodelete:
-        files_.rm()
+        if not argv_.options.nodelete:
+            files_.rm()
 
     str_.pollute('\nFinished succesfully\n\n')
 
