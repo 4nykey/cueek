@@ -7,6 +7,7 @@ import wave
 import struct
 import ConfigParser
 from optparse import OptionParser
+from subprocess import *
 
 DFLT_CFG="""# file naming scheme
 #   <%metadata%>[|<convert>]
@@ -20,7 +21,7 @@ mult_files_va:  %tracknumber% - %artist% - %title%|lower
 single_file:    %albumartist% - %album%|lower
 
 # encoders and decoders
-# decoders must be able to output to stdout, encoders - read from stdin
+# decoders must be able to write to stdout, encoders - read from stdin
 #   [extension]
 #   decode: <commandline>   where '%f' is input file
 #   encode: <commandline>   where '%f' is output file
@@ -210,9 +211,9 @@ class Meta:
             result = 'untitled'
         return result
     def tag(self, n = 0):
-        retcode = os.wait() # wait for encoder to finish, so mutagen can...
-        f = File(io_.fname.strip('\'"')) # ...identify the file type
+        f = File(io_.fname.strip('\'"')) # let mutagen identify the file type
         try:
+            f.info
             if cue_.is_va:
                 f['ALBUMARTIST'] = self.data['albumartist'].lower()
             f['ARTIST'] = self.put_missing(n, 'artist').lower()
@@ -282,9 +283,9 @@ class IO:
             r = fn
         elif cfg_.read('decode', 1):
             fn = str_.enclose('"', fn)
-            s = cfg_.read('decode').replace('%f', fn)
-            w, r, e = os.popen3(s)
-            w.close
+            cmd = cfg_.read('decode').replace('%f', fn)
+            p = Popen(cmd, shell=True, stdout=PIPE, stderr=PIPE, close_fds=True)
+            (r, e) = (p.stdout, p.stderr)
         else:
             errstr = 'cannot decode: ' + fn + \
                 ', please set decoder in config file'
@@ -307,15 +308,16 @@ class IO:
         cfg_.section = argv_.format
         tag_str = ''
         if argv_.format == 'wav':
-            w = self.tryfile(1)
+            f = self.tryfile(1)
+            w = (f, None)
         elif cfg_.read('encode', 1):
             self.fname = str_.enclose('"', self.fname)
-            s = cfg_.read('encode')
-            s = s.replace('%f', self.fname)
-            s = s.encode(encoding)
-            w, r, e = os.popen3(s)
-            r.close()
-            e.close()
+            cmd = cfg_.read('encode')
+            cmd = cmd.replace('%f', self.fname)
+            cmd = cmd.encode(encoding)
+            p = Popen(cmd, shell=True, stdin=PIPE, stderr=PIPE, close_fds=True)
+            p.stderr.close()
+            w = (p.stdin, p)
         else:
             errstr = 'cannot encode to ' + argv_.format + \
                 ', please set encoder in config file'
@@ -355,7 +357,9 @@ class Audio:
         self.fout.write(frames)
     def write(self, _fin, _fout, lgth=0):
         if isinstance(_fin, list): # merging input files to 1 out file
-            io_.fname = _fout; self.fout = io_.wav_wr()
+            io_.fname = _fout
+            child_enc = io_.wav_wr()
+            self.fout = child_enc[0]
             # when piping, write wav header with number of samples
             # equal to sum of lengths of input files
             self.hdr_frnum = meta_.data['cd_duration']
@@ -363,7 +367,8 @@ class Audio:
             if not cue_.trackzero_present:
                 start = 1
             for x in xrange(start, len(_fin)):
-                io_.fname = _fin[x]; self.fin = io_.wav_rd()
+                io_.fname = _fin[x]
+                self.fin = io_.wav_rd()
                 self.frnum = self.get_params()[3]
 
                 abs_pos = meta_.get(x-1, 'apos')
@@ -376,6 +381,10 @@ class Audio:
                 if self.hdr_frnum: self.hdr_frnum = 0 # write header only once
                 self.fin.close()
             self.fout.close()
+            try:
+                child_enc[1].wait()
+            except AttributeError:
+                pass
             meta_.tag()
         elif isinstance(_fout, list): # splitting to multiple files
             io_.fname = _fin; self.fin = io_.wav_rd()
@@ -386,7 +395,9 @@ class Audio:
                     io_.trknum = x
                 else:
                     io_.trknum = x + 1
-                io_.fname = _fout[x]; self.fout = io_.wav_wr()
+                io_.fname = _fout[x]
+                child_enc = io_.wav_wr()
+                self.fout = child_enc[0]
                 self.hdr_frnum = self.frnum = lgth[x]
 
                 statstr = 'Writing ' + io_.fname + ' (' + \
@@ -396,6 +407,10 @@ class Audio:
 
                 self.wr_chunks()
                 self.fout.close()
+                try:
+                    child_enc[1].wait()
+                except AttributeError:
+                    pass
                 meta_.tag(x+1)
             self.fin.close()
 
@@ -688,8 +703,8 @@ class Files:
                 for file in files: # get list of encoded files
                     f = f + '"' + file.encode(encoding) + '" '
                 if cfg_.read('rg', 1):
-                    s = cfg_.read('rg').replace('%f', f)
-                    os.system(s)
+                    cmd = cfg_.read('rg').replace('%f', f)
+                    call(cmd, shell=True)
     def rm(self):
         str_.pollute('\nDeleting files...\n\n')
         n = meta_.data['numoftracks']
