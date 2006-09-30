@@ -385,6 +385,7 @@ class Audio:
                 child_enc[1].wait()
             except AttributeError:
                 pass
+            io_.fname = _fout
             meta_.tag()
         elif isinstance(_fout, list): # splitting to multiple files
             io_.fname = _fin; self.fin = io_.wav_rd()
