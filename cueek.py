@@ -211,8 +211,8 @@ class Meta:
             result = 'untitled'
         return result
     def tag(self, n = 0):
-        f = File(io_.fname.strip('\'"')) # let mutagen identify the file type
-        try:
+        f = File(io_.fname.strip('\'"'))
+        if hasattr(f, 'info'):
             f.info
             if cue_.is_va:
                 f['ALBUMARTIST'] = self.data['albumartist'].lower()
@@ -230,8 +230,6 @@ class Meta:
             if argv_.options.discnumber:
                 f['DISCNUMBER'] = argv_.options.discnumber
             f.save()
-        except AttributeError:
-            pass
     def filename(self, t, single=0):
         cfg_.section = 'filenames'
         if single:
@@ -386,7 +384,7 @@ class Audio:
             except AttributeError:
                 pass
             io_.fname = _fout
-            meta_.tag()
+            if callable(File): meta_.tag()
         elif isinstance(_fout, list): # splitting to multiple files
             io_.fname = _fin; self.fin = io_.wav_rd()
             self.get_params()
@@ -412,7 +410,7 @@ class Audio:
                     child_enc[1].wait()
                 except AttributeError:
                     pass
-                meta_.tag(x+1)
+                if callable(File): meta_.tag(x+1)
             self.fin.close()
 
 def bailout(msg):
