@@ -211,7 +211,10 @@ class Meta:
             result = 'untitled'
         return result
     def tag(self, n = 0):
-        f = File(io_.fname.strip('\'"'))
+        if callable(File):
+            f = File(io_.fname.strip('\'"'))
+        else:
+            f = None
         if hasattr(f, 'info'):
             f.info
             if cue_.is_va:
@@ -384,7 +387,7 @@ class Audio:
             except AttributeError:
                 pass
             io_.fname = _fout
-            if callable(File): meta_.tag()
+            meta_.tag()
         elif isinstance(_fout, list): # splitting to multiple files
             io_.fname = _fin; self.fin = io_.wav_rd()
             self.get_params()
@@ -410,7 +413,7 @@ class Audio:
                     child_enc[1].wait()
                 except AttributeError:
                     pass
-                if callable(File): meta_.tag(x+1)
+                meta_.tag(x+1)
             self.fin.close()
 
 def bailout(msg):
@@ -759,7 +762,7 @@ if __name__ == '__main__':
         try:
             from mutagen import File
         except ImportError:
-            pass
+            File = None
         files_.write()
         if not argv_.options.nodelete:
             files_.rm()
