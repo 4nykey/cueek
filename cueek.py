@@ -152,11 +152,14 @@ class Strings:
     def __init__(self):
         self.pad = 2
         self.override = 0
-    def pollute(self, s):
+    def pollute(self, s, die=0):
         if not argv_.options.quiet or self.override:
-            s = s.encode(encoding)
+            if isinstance(s, unicode):
+                s = s.encode(encoding)
+            if die: s = 'ERROR: ' + s
             sys.stderr.write(s)
             sys.stderr.flush()
+            if die: sys.exit(1)
     def leadzero(self, n):
         nn = str(n).zfill(self.pad)
         return nn
@@ -272,12 +275,11 @@ class IO:
             f = open(self.fname, mode)
         except IOError, (errno, strerror):
             errstr = 'cannot open "' + self.fname + '" for ' + mode_str + \
-                ': %s' % (strerror)
-            bailout(errstr)
+                ': %s' % (strerror.decode(encoding))
+            str_.pollute(errstr, die=1)
         return f
     def wav_rd(self):
         fn = self.fname
-        fn = fn.encode(encoding)
         ext = fn.split('.')[-1].lower()
         cfg_.section = ext
         if ext == 'wav':
@@ -290,20 +292,20 @@ class IO:
         else:
             errstr = 'cannot decode: ' + fn + \
                 ', please set decoder in config file'
-            bailout(errstr)
+            str_.pollute(errstr, die=1)
         try:
             r = wave.open(r, 'rb')
         except IOError, (errno, strerror):
             errstr = 'cannot open ' + fn + ' for reading' + \
-            ': %s' % (strerror)
-            bailout(errstr)
+            ': %s' % (strerror.decode(encoding))
+            str_.pollute(errstr, die=1)
         except wave.Error, (strerror):
-            errstr = 'cannot open wave file ' + fn + ': %s' % (strerror)
-            bailout(errstr)
+            errstr = 'cannot open wave file ' + fn + ': %s' % (strerror.decode(encoding))
+            str_.pollute(errstr, die=1)
         except EOFError:
-            errstr = 'cannot decode ' + fn + ': ' + e.read().strip()
+            errstr = 'cannot decode ' + fn + ': ' + e.read().strip().decode(encoding)
             e.close
-            bailout(errstr)
+            str_.pollute(errstr, die=1)
         return r
     def wav_wr(self):
         cfg_.section = argv_.format
@@ -315,14 +317,13 @@ class IO:
             self.fname = str_.enclose('"', self.fname)
             cmd = cfg_.read('encode')
             cmd = cmd.replace('%f', self.fname)
-            cmd = cmd.encode(encoding)
             p = Popen(cmd, shell=True, stdin=PIPE, stderr=PIPE, close_fds=True)
             p.stderr.close()
             w = (p.stdin, p)
         else:
             errstr = 'cannot encode to ' + argv_.format + \
                 ', please set encoder in config file'
-            bailout(errstr)
+            str_.pollute(errstr, die=1)
         return w
 
 class Audio:
@@ -415,10 +416,6 @@ class Audio:
                     pass
                 meta_.tag(x+1)
             self.fin.close()
-
-def bailout(msg):
-    msg = 'ERROR: ' + msg
-    sys.exit(msg)
 
 class Cue:
     def __init__(self):
@@ -520,7 +517,7 @@ class Cue:
                     cue_type = 'gapless'
                 else:
                     errstr = 'failed to recognise cuesheet type'
-                    bailout(errstr)
+                    str_.pollute(errstr, die=1)
         self.type = cue_type
         for x in xrange(meta_.data['numoftracks']):
             if meta_.get(x, 'artist') and not \
@@ -703,7 +700,7 @@ class Files:
                 str_.pollute('\nApplying replay gain...\n\n')
                 f = ' '
                 for file in files: # get list of encoded files
-                    f = f + '"' + file.encode(encoding) + '" '
+                    f = f + str_.enclose('"', file) + ' '
                 if cfg_.read('rg', 1):
                     cmd = cfg_.read('rg').replace('%f', f)
                     call(cmd, shell=True)
