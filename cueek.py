@@ -619,27 +619,39 @@ class Cue:
         statstr = "This cuesheet appears to be of '" + self.type + "' type"
         if self.is_va:
             statstr = statstr + ", 'various artists'"
-        statstr = statstr + "...\n\nCD Layout:\n"
+        statstr = statstr + "...\n\nCD Layout:\n\n"
+        # check if we display layout for compliant cue
+        # i.e. source is (or output requested as) compliant
+        want_compliant = 0
+        if (cue_.is_compl or
+        (cue_.is_singlefile and not argv_.options.noncompliant)):
+            want_compliant = 1
         for trknum in xrange(meta_.data['numoftracks']):
-            length = str_.getlength(meta_.get(trknum, 'lgth'))
-            gap = meta_.get(trknum, 'gap')
             gap_str = ''
             trk_str = ''
             lgth_str = ''
-            if meta_.get(trknum, 'lgth'):
-                trk_str = 'Track ' + str_.leadzero(trknum) + ': ' + '\n'
-                lgth_str = '\tLength: ' + length + '\n'
-            if gap:
-                gap_str = '\tGap:    ' + str_.getlength(gap) + '\n'
-            if cue_.pregap > 0 and trknum == 1:
-                statstr = statstr + '\tPregap: ' + \
-                    str_.getlength(cue_.pregap) + '\n'
-            statstr = statstr + trk_str + lgth_str
-            if (cue_.is_compl or
-            (cue_.is_singlefile and not argv_.options.noncompliant)):
-                statstr = gap_str + statstr
+            if want_compliant:
+                gap = meta_.get(trknum, 'gap')
             else:
-                statstr = statstr + gap_str
+                gap = meta_.get(trknum+1, 'gap')
+            if meta_.get(trknum, 'lgth'):
+                real_length = meta_.get(trknum, 'lgth')
+                length = real_length - gap
+                trk_str = 'Track ' + str_.leadzero(trknum) + ' (' + \
+                    str_.getlength(real_length) + ')\n'
+                lgth_str = ' content: ' + str_.getlength(length) + '\n'
+            if cue_.pregap > 0 and trknum == 1:
+                statstr = statstr + 'Pregap   (' + \
+                    str_.getlength(cue_.pregap) + ')\n'
+            statstr = statstr + trk_str
+            if gap:
+                gap_str = '     gap: ' + str_.getlength(gap) + '\n'
+                if want_compliant:
+                    statstr = statstr + gap_str + lgth_str
+                else:
+                    statstr = statstr + lgth_str + gap_str
+        statstr = statstr + '\nLength   (' + \
+            str_.getlength(meta_.data['cd_duration']) + ')\n'
         str_.pollute(statstr)
     def save(self):
         if argv_.options.output:
@@ -747,5 +759,5 @@ if __name__ == '__main__':
         if not argv_.options.nodelete:
             files_.rm()
 
-    str_.pollute('\nFinished succesfully\n\n')
+    str_.pollute('\nFinished succesfully\n')
 
