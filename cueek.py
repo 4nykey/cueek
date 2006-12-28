@@ -151,9 +151,8 @@ class Config:
 class Strings:
     def __init__(self):
         self.pad = 2
-        self.override = 0
-    def pollute(self, s, die=0):
-        if not argv_.options.quiet or self.override:
+    def pollute(self, s, override=0, die=0):
+        if not argv_.options.quiet or override:
             if isinstance(s, unicode):
                 s = s.encode(encoding)
             if die: s = 'ERROR: ' + s
@@ -239,25 +238,12 @@ class Meta:
     def filename(self, t, single=0):
         cfg_.section = 'filenames'
         if single:
-            if cfg_.read('single_file', 1):
-                f = cfg_.scheme(t, 'single_file')
-            else:
-                s = self.data['albumartist'] + ' - ' + self.data['album']
-                f = s.lower()
+            f = cfg_.scheme(t, 'single_file')
         else:
             if cue_.is_va:
-                if cfg_.read('mult_files_va', 1):
-                    f = cfg_.scheme(t, 'mult_files_va')
-                else:
-                    s = str_.leadzero(t, 2) + ' - ' + \
-                        self.put_missing(t, 'artist') + ' - ' + self.put_missing(t, 'title')
-                    f = s.lower()
+                f = cfg_.scheme(t, 'mult_files_va')
             else:
-                if cfg_.read('mult_files', 1):
-                    f = cfg_.scheme(t, 'mult_files')
-                else:
-                    s = str_.leadzero(t, 2) + ' - ' + self.put_missing(t, 'title')
-                    f = s.lower()
+                f = cfg_.scheme(t, 'mult_files')
         f = re.sub('[*":/\\\?]', '_', f)
         f = f + '.' + argv_.format
         return f
@@ -300,7 +286,7 @@ class IO:
             ': %s' % (strerror.decode(encoding))
             str_.pollute(errstr, die=1)
         except wave.Error, (strerror):
-            errstr = 'cannot open wave file ' + fn + ': %s' % (strerror.decode(encoding))
+            errstr = 'cannot open wave file ' + fn + ': %s' % (str(strerror).decode(encoding))
             str_.pollute(errstr, die=1)
         except EOFError:
             errstr = 'cannot decode ' + fn + ': ' + e.read().strip().decode(encoding)
@@ -317,6 +303,7 @@ class IO:
             self.fname = str_.enclose('"', self.fname)
             cmd = cfg_.read('encode')
             cmd = cmd.replace('%f', self.fname)
+            cmd = cmd
             p = Popen(cmd, shell=True, stdin=PIPE, stderr=PIPE, close_fds=True)
             p.stderr.close()
             w = (p.stdin, p)
@@ -329,7 +316,6 @@ class IO:
 class Audio:
     #smpl_freq = 44100
     #frm_length = smpl_freq / 75
-    WAVE_FORMAT_PCM = 0x0001
     def __init__(self):
         self.frnum = 0
         self.hdr_frnum = 0
@@ -341,7 +327,7 @@ class Audio:
         params = meta_.data['wavparams']
         datalength = self.hdr_frnum * params[0] * params[1]
         hdr = 'RIFF' + struct.pack('<l4s4slhhllhh4s', 36 + datalength,\
-            'WAVE', 'fmt ', 16, self.WAVE_FORMAT_PCM, params[0], params[2],\
+            'WAVE', 'fmt ', 16, wave.WAVE_FORMAT_PCM, params[0], params[2],\
             params[0] * params[2] * params[1], params[0] * params[1],\
             params[1] * 8, 'data')
         hdr = hdr + struct.pack('<l', datalength)
@@ -374,10 +360,9 @@ class Audio:
                 self.frnum = self.get_params()[3]
 
                 abs_pos = meta_.get(x-1, 'apos')
-                statstr = 'Adding "' + _fin[x] + '" to "' + _fout + '" at ' + \
+                statstr = _fin[x] + ' >> ' + _fout + ' @ ' + \
                     str_.getlength(abs_pos) + '\n'
-                str_.override = 1
-                str_.pollute(statstr)
+                str_.pollute(statstr, override=1)
 
                 self.wr_chunks()
                 if self.hdr_frnum: self.hdr_frnum = 0 # write header only once
@@ -403,10 +388,9 @@ class Audio:
                 self.fout = child_enc[0]
                 self.hdr_frnum = self.frnum = lgth[x]
 
-                statstr = 'Writing ' + io_.fname + ' (' + \
-                    str_.getlength(lgth[x]) + ')\n'
-                str_.override = 1
-                str_.pollute(statstr)
+                statstr = _fin + ' > ' + _fout[x] + ' # ' + \
+                    str_.getlength(lgth[x]) + '\n'
+                str_.pollute(statstr, override=1)
 
                 self.wr_chunks()
                 self.fout.close()
@@ -539,7 +523,7 @@ class Cue:
                     else:
                         wav_file = meta_.filename(trknum)
                 else:
-                    wav_file = meta_.filename(trknum, 1)
+                    wav_file = meta_.filename(trknum, single=1)
                 wav_file = str_.enclose('"', wav_file)
                 line = re.sub('".+"', wav_file, line)
                 cue_.sheet.insert(x, line)
@@ -632,7 +616,7 @@ class Cue:
             meta_.put(trknum, 'spos', start_pos)
             meta_.put(trknum, 'lgth', trk_length)
     def print_(self):
-        statstr = "This cuesheet appears to be '" + self.type + "'"
+        statstr = "This cuesheet appears to be of '" + self.type + "' type"
         if self.is_va:
             statstr = statstr + ", 'various artists'"
         statstr = statstr + "...\n\nCD Layout:\n"
@@ -691,7 +675,7 @@ class Files:
                 for x in xrange(n):
                     if meta_.get(x, 'name'):
                         files.append(meta_.get(x, 'name'))
-                out_file = meta_.filename(x, 1)
+                out_file = meta_.filename(x, single=1)
                 aud_.write(files, out_file)
                 self.apply_rg([out_file])
     def apply_rg(self, files):
@@ -710,8 +694,7 @@ class Files:
         for x in xrange(1, n):
             if meta_.get(x, 'name'):
                 f = meta_.get(x, 'name')
-                str_.override = 1
-                str_.pollute('Deleting ' + f + '\n')
+                str_.pollute('Deleting ' + f + '\n', override=1)
                 os.remove(f)
 
 
