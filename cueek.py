@@ -123,6 +123,11 @@ class Config:
                 errstr = 'ERROR: config file: %s\n' % strerror
                 str_.pollute(errstr)
         return result
+    def get_cmdline(self, action, fname):
+        cmd = cfg_.read(action).split()
+        pos = cmd.index('%f')
+        cmd = cmd[:pos] + fname + cmd[pos+1:]
+        return cmd
     def scheme(self, t, e):
         s = self.read(e)
         spl = s.split('%')
@@ -153,8 +158,7 @@ class Strings:
         self.pad = 2
     def pollute(self, s, override=0, die=0):
         if not argv_.options.quiet or override:
-            if isinstance(s, unicode):
-                s = s.encode(encoding)
+            if isinstance(s, unicode): s = s.encode(encoding)
             if die: s = 'ERROR: ' + s
             sys.stderr.write(s)
             sys.stderr.flush()
@@ -271,9 +275,8 @@ class IO:
         if ext == 'wav':
             r = fn
         elif cfg_.read('decode', 1):
-            fn = str_.enclose('"', fn)
-            cmd = cfg_.read('decode').replace('%f', fn)
-            p = Popen(cmd, shell=True, stdout=PIPE, stderr=PIPE, close_fds=True)
+            s = cfg_.get_cmdline('decode', [fn])
+            p = Popen(s, stdout=PIPE, stderr=PIPE, close_fds=True)
             (r, e) = (p.stdout, p.stderr)
         else:
             errstr = 'don\'t know how to decode "%s", ' % (fn)
@@ -302,11 +305,8 @@ class IO:
             f = self.tryfile(1)
             w = (f, None)
         elif cfg_.read('encode', 1):
-            self.fname = str_.enclose('"', self.fname)
-            cmd = cfg_.read('encode')
-            cmd = cmd.replace('%f', self.fname)
-            cmd = cmd
-            p = Popen(cmd, shell=True, stdin=PIPE, stderr=PIPE, close_fds=True)
+            s = cfg_.get_cmdline('encode', [self.fname])
+            p = Popen(s, stdin=PIPE, stderr=PIPE, close_fds=True)
             p.stderr.close()
             w = (p.stdin, p)
         else:
@@ -379,7 +379,6 @@ class Audio:
         elif isinstance(_fout, list): # splitting to multiple files
             io_.fname = _fin; self.fin = io_.wav_rd()
             self.get_params()
-            _meta = ''
             for x in xrange(len(_fout)):
                 if meta_.get(1, 'idx1') and not argv_.options.notrackzero:
                     io_.trknum = x
@@ -695,12 +694,14 @@ class Files:
             if not argv_.options.norg and not argv_.format == 'wav':
                 cfg_.section = argv_.format
                 str_.pollute('\nApplying replay gain...\n\n')
-                f = ' '
+                f = []
                 for file in files: # get list of encoded files
-                    f = f + str_.enclose('"', file) + ' '
+                    f.append(file)
                 if cfg_.read('rg', 1):
-                    cmd = cfg_.read('rg').replace('%f', f)
-                    call(cmd, shell=True)
+                    s = cfg_.get_cmdline('rg', f)
+                    if call(s):
+                        str_.pollute('WARNING: failed to apply replay gain',
+                        override=1)
     def rm(self):
         str_.pollute('\nDeleting files...\n\n')
         n = meta_.data['numoftracks']
