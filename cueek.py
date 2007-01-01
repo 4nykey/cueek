@@ -260,8 +260,8 @@ class IO:
         try:
             f = open(self.fname, mode)
         except IOError, (errno, strerror):
-            errstr = 'cannot open "' + self.fname + '" for ' + mode_str + \
-                ': %s' % (strerror.decode(encoding))
+            errstr = 'cannot open "%s" for %s: %s' % \
+                (self.fname, mode_str, strerror.decode(encoding))
             str_.pollute(errstr, die=1)
         return f
     def wav_rd(self):
@@ -276,20 +276,22 @@ class IO:
             p = Popen(cmd, shell=True, stdout=PIPE, stderr=PIPE, close_fds=True)
             (r, e) = (p.stdout, p.stderr)
         else:
-            errstr = 'cannot decode: ' + fn + \
-                ', please set decoder in config file'
+            errstr = 'don\'t know how to decode "%s", ' % (fn)
+            errstr += 'please set decoder in config file'
             str_.pollute(errstr, die=1)
         try:
             r = wave.open(r, 'rb')
         except IOError, (errno, strerror):
-            errstr = 'cannot open ' + fn + ' for reading' + \
-            ': %s' % (strerror.decode(encoding))
+            errstr = 'cannot open "%s" for reading: %s' % \
+                (fn, strerror.decode(encoding))
             str_.pollute(errstr, die=1)
         except wave.Error, (strerror):
-            errstr = 'cannot open wave file ' + fn + ': %s' % (str(strerror).decode(encoding))
+            errstr = 'cannot open wave file "%s": %s' % \
+                (fn, str(strerror).decode(encoding))
             str_.pollute(errstr, die=1)
         except EOFError:
-            errstr = 'cannot decode ' + fn + ': ' + e.read().strip().decode(encoding)
+            errstr = 'cannot decode %s: %s' % \
+                (fn, e.read().strip().decode(encoding))
             e.close
             str_.pollute(errstr, die=1)
         return r
@@ -308,8 +310,8 @@ class IO:
             p.stderr.close()
             w = (p.stdin, p)
         else:
-            errstr = 'cannot encode to ' + argv_.format + \
-                ', please set encoder in config file'
+            errstr = 'don\'t how to encode "%s" files, ' % (argv_.format)
+            errstr += 'please set appropriate encoder in config file'
             str_.pollute(errstr, die=1)
         return w
 
@@ -360,8 +362,8 @@ class Audio:
                 self.frnum = self.get_params()[3]
 
                 abs_pos = meta_.get(x-1, 'apos')
-                statstr = _fin[x] + ' >> ' + _fout + ' @ ' + \
-                    str_.getlength(abs_pos) + '\n'
+                statstr = '%s >> %s @ %s\n' % \
+                    (_fin[x], _fout, str_.getlength(abs_pos))
                 str_.pollute(statstr, override=1)
 
                 self.wr_chunks()
@@ -388,8 +390,8 @@ class Audio:
                 self.fout = child_enc[0]
                 self.hdr_frnum = self.frnum = lgth[x]
 
-                statstr = _fin + ' > ' + _fout[x] + ' # ' + \
-                    str_.getlength(lgth[x]) + '\n'
+                statstr = '%s > %s # %s\n' % \
+                    (_fin, _fout[x], str_.getlength(lgth[x]))
                 str_.pollute(statstr, override=1)
 
                 self.wr_chunks()
@@ -637,21 +639,20 @@ class Cue:
             if meta_.get(trknum, 'lgth'):
                 real_length = meta_.get(trknum, 'lgth')
                 length = real_length - gap
-                trk_str = 'Track ' + str_.leadzero(trknum) + ' (' + \
-                    str_.getlength(real_length) + ')\n'
-                lgth_str = ' content: ' + str_.getlength(length) + '\n'
+                trk_str = 'Track %s (%s)\n' % \
+                    (str_.leadzero(trknum), str_.getlength(real_length))
+                lgth_str = ' content: %s\n' % (str_.getlength(length))
             if cue_.pregap > 0 and trknum == 1:
-                statstr = statstr + 'Pregap   (' + \
-                    str_.getlength(cue_.pregap) + ')\n'
-            statstr = statstr + trk_str
+                statstr += 'Pregap   (%s)\n' % (str_.getlength(cue_.pregap))
+            statstr += trk_str
             if gap:
-                gap_str = '     gap: ' + str_.getlength(gap) + '\n'
+                gap_str = '     gap: %s\n' % (str_.getlength(gap))
                 if want_compliant:
-                    statstr = statstr + gap_str + lgth_str
+                    statstr += gap_str + lgth_str
                 else:
-                    statstr = statstr + lgth_str + gap_str
-        statstr = statstr + '\nLength   (' + \
-            str_.getlength(meta_.data['cd_duration']) + ')\n'
+                    statstr += lgth_str + gap_str
+        statstr += '\nLength   (%s)\n' % \
+            (str_.getlength(meta_.data['cd_duration']))
         str_.pollute(statstr)
     def save(self):
         if argv_.options.output:
@@ -672,7 +673,7 @@ class Files:
     def write(self):
         n = meta_.data['numoftracks']
         for argv_.format in argv_.formats:
-            str_.pollute('\nWriting ' + argv_.format + ' files...\n\n')
+            str_.pollute('\nWriting %s files...\n\n' % (argv_.format))
             files=[]
             lengths=[]
             if cue_.is_singlefile:
@@ -706,7 +707,7 @@ class Files:
         for x in xrange(1, n):
             if meta_.get(x, 'name'):
                 f = meta_.get(x, 'name')
-                str_.pollute('Deleting ' + f + '\n', override=1)
+                str_.pollute('<<< %s\n' % f, override=1)
                 os.remove(f)
 
 
