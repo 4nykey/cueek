@@ -157,7 +157,7 @@ class Strings:
     def __init__(self):
         self.pad = 2
     def pollute(self, s, override=0, die=0):
-        if not argv_.options.quiet or override:
+        if not argv_.options.quiet or override or die:
             if isinstance(s, unicode): s = s.encode(encoding)
             if die: s = 'ERROR: ' + s
             sys.stderr.write(s)
@@ -274,9 +274,10 @@ class IO:
         cfg_.section = ext
         if ext == 'wav':
             r = fn
+            p = None
         elif cfg_.read('decode', 1):
             s = cfg_.get_cmdline('decode', [fn])
-            p = Popen(s, stdout=PIPE, stderr=PIPE, close_fds=True)
+            p = Popen(s, stdout=PIPE, stderr=PIPE)
             (r, e) = (p.stdout, p.stderr)
         else:
             errstr = 'don\'t know how to decode "%s", ' % (fn)
@@ -297,7 +298,7 @@ class IO:
                 (fn, e.read().strip().decode(encoding))
             e.close
             str_.pollute(errstr, die=1)
-        return r
+        return (r, p)
     def wav_wr(self):
         cfg_.section = argv_.format
         tag_str = ''
@@ -306,7 +307,7 @@ class IO:
             w = (f, None)
         elif cfg_.read('encode', 1):
             s = cfg_.get_cmdline('encode', [self.fname])
-            p = Popen(s, stdin=PIPE, stderr=PIPE, close_fds=True)
+            p = Popen(s, stdin=PIPE, stderr=PIPE)
             p.stderr.close()
             w = (p.stdin, p)
         else:
@@ -345,11 +346,20 @@ class Audio:
             self.fout.write(frames)
         frames = self.fin.readframes(self.frnum%step) # leftovers
         self.fout.write(frames)
+    def wait_for_child(self, proc):
+        retcode = 0
+        try:
+            retcode = proc.wait()
+        except AttributeError:
+            pass
+        if retcode:
+            errstr = 'error while running child process: %s' % \
+                proc.stderr.read().strip().decode(encoding)
+            str_.pollute(errstr, die=1)
     def write(self, _fin, _fout, lgth=0):
         if isinstance(_fin, list): # merging input files to 1 out file
             io_.fname = _fout
-            child_enc = io_.wav_wr()
-            self.fout = child_enc[0]
+            (self.fout, child_enc) = io_.wav_wr()
             # when piping, write wav header with number of samples
             # equal to sum of lengths of input files
             self.hdr_frnum = meta_.data['cd_duration']
@@ -358,7 +368,7 @@ class Audio:
                 start = 1
             for x in xrange(start, len(_fin)):
                 io_.fname = _fin[x]
-                self.fin = io_.wav_rd()
+                (self.fin, child_dec) = io_.wav_rd()
                 self.frnum = self.get_params()[3]
 
                 abs_pos = meta_.get(x-1, 'apos')
@@ -368,16 +378,15 @@ class Audio:
 
                 self.wr_chunks()
                 if self.hdr_frnum: self.hdr_frnum = 0 # write header only once
+                self.wait_for_child(child_dec)
                 self.fin.close()
             self.fout.close()
-            try:
-                child_enc[1].wait()
-            except AttributeError:
-                pass
+            self.wait_for_child(child_enc)
             io_.fname = _fout
             meta_.tag()
         elif isinstance(_fout, list): # splitting to multiple files
-            io_.fname = _fin; self.fin = io_.wav_rd()
+            io_.fname = _fin
+            (self.fin, child_dec) = io_.wav_rd()
             self.get_params()
             for x in xrange(len(_fout)):
                 if meta_.get(1, 'idx1') and not argv_.options.notrackzero:
@@ -385,8 +394,7 @@ class Audio:
                 else:
                     io_.trknum = x + 1
                 io_.fname = _fout[x]
-                child_enc = io_.wav_wr()
-                self.fout = child_enc[0]
+                (self.fout, child_enc) = io_.wav_wr()
                 self.hdr_frnum = self.frnum = lgth[x]
 
                 statstr = '%s > %s # %s\n' % \
@@ -395,11 +403,9 @@ class Audio:
 
                 self.wr_chunks()
                 self.fout.close()
-                try:
-                    child_enc[1].wait()
-                except AttributeError:
-                    pass
+                self.wait_for_child(child_enc)
                 meta_.tag(x+1)
+            self.wait_for_child(child_dec)
             self.fin.close()
 
 class Cue:
@@ -437,7 +443,8 @@ class Cue:
                 spl_lines = line.split('"')
                 ref_file = spl_lines[1]
 
-                io_.fname = ref_file; aud_.fin = io_.wav_rd()
+                io_.fname = ref_file
+                aud_.fin = io_.wav_rd()[0]
                 params = aud_.get_params()
                 meta_.data['wavparams'] = params
                 aud_.fin.close()
