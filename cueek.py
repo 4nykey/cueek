@@ -408,19 +408,28 @@ class Cue:
         self.is_va = 0
         self.encoding = encoding
         self.sheet = []
+    def dblquotes(self, s):
+        """This is to allow double quotes inside PERFORMER and TITLE fields,
+        so they could be used for tagging, while replacing them with single
+        quotes in output"""
+        p1 = s.partition('"')
+        p2 = p1[2].rpartition('"')
+        m = p2[0]
+        s = p1[0] + '"' + p2[0].replace('"', "'") + '"' + p2[2]
+        return (m, s)
     def parse(self, src):
         trknum = 1
         for line in src:
             line = line.decode(self.encoding)
             if line.find('PERFORMER') != -1:
-                metadata = line.split('"')[1]
+                (metadata, line) = self.dblquotes(line)
                 if not meta_.get(1, 'trck'):
                     meta_.data['albumartist'] = metadata
                 else:
                     meta_.put(trknum, 'artist', metadata)
                 self.sheet.append(line)
             elif line.find('TITLE') != -1:
-                metadata = line.split('"')[1]
+                (metadata, line) = self.dblquotes(line)
                 if not meta_.get(1, 'trck'):
                     meta_.data['album'] = metadata
                 else:
