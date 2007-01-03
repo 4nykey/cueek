@@ -8,6 +8,7 @@ import struct
 import ConfigParser
 from optparse import OptionParser
 from subprocess import *
+from mutagen import File
 
 DFLT_CFG="""# file naming scheme
 #   <%metadata%>[|<convert>]
@@ -210,12 +211,8 @@ class Meta:
             result = 'untitled'
         return result
     def tag(self, n = 0):
-        if callable(File):
-            f = File(io_.fname.strip('\'"'))
-        else:
-            f = None
+        f = File(io_.fname.strip('\'"'))
         if hasattr(f, 'info'):
-            f.info
             if cue_.is_va:
                 f['ALBUMARTIST'] = self.data['albumartist'].lower()
             f['ARTIST'] = self.put_missing(n, 'artist').lower()
@@ -408,6 +405,27 @@ class Cue:
         self.is_va = 0
         self.encoding = encoding
         self.sheet = []
+    def probe(self):
+        cue = []
+        f = os.open(io_.fname, os.O_RDONLY)
+        size = os.fstat(f)[-4]
+        if size >= long(16384):
+            _f = File(io_.fname)
+            try:
+                cue = _f['CUESHEET'][0].splitlines(1)
+            except (KeyError, TypeError):
+                str_.pollute('failed to probe this cuesheet', die=1)
+        elif argv_.options.charmap:
+            self.encoding = argv_.options.charmap
+        else:
+            try:
+                import chardet
+                data = os.read(f, size)
+                self.encoding = chardet.detect(data)['encoding']
+            except ImportError:
+                pass
+        os.close(f)
+        return cue
     def dblquotes(self, s):
         """This is to allow double quotes inside PERFORMER and TITLE fields,
         so they could be used for tagging, while replacing them with single
@@ -420,7 +438,8 @@ class Cue:
     def parse(self, src):
         trknum = 1
         for line in src:
-            line = line.decode(self.encoding)
+            if not isinstance(line, unicode):
+                line = line.decode(self.encoding)
             if line.find('PERFORMER') != -1:
                 (metadata, line) = self.dblquotes(line)
                 if not meta_.get(1, 'trck'):
@@ -439,7 +458,8 @@ class Cue:
                 spl_lines = line.split('"')
                 ref_file = spl_lines[1]
 
-                io_.fname = ref_file
+                if isinstance(src, file):
+                    io_.fname = ref_file
                 aud_.fin = io_.wav_rd()[0]
                 params = aud_.get_params()
                 meta_.data['wavparams'] = params
@@ -482,7 +502,8 @@ class Cue:
             del meta_.data['00lgth']
         meta_.data['numoftracks'] = trknum
         meta_.data['cd_duration'] = abs_pos
-        src.close()
+        if isinstance(src, file):
+            src.close()
     def type(self):
         gaps_present = 0
         self.is_va = 0
@@ -727,18 +748,9 @@ if __name__ == '__main__':
     cuedir = os.path.split(cuename)[0]
     os.chdir(cuedir)
 
-    if argv_.options.charmap:
-        cue_.encoding = argv_.options.charmap
-    else:
-        try:
-            import chardet
-            orig_cue = io_.tryfile()
-            data = orig_cue.read()
-            cue_.encoding = chardet.detect(data)['encoding']
-            orig_cue.close()
-        except ImportError:
-            pass
-    orig_cue = io_.tryfile(mode='Ur')
+    orig_cue = cue_.probe()
+    if not orig_cue:
+        orig_cue = io_.tryfile(mode='Ur')
     cue_.parse(orig_cue)
     cue_.type()
 
@@ -750,10 +762,6 @@ if __name__ == '__main__':
     cue_.save()
 
     if not argv_.options.nowrite:
-        try:
-            from mutagen import File
-        except ImportError:
-            File = None
         files_.write()
         if not argv_.options.nodelete:
             files_.rm()
