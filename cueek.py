@@ -107,7 +107,7 @@ class Config:
         self.cfg_parse = ConfigParser.ConfigParser()
         io_.fname = self.cfg_
         if not os.path.isfile(self.cfg_): # write config file on first run
-            cfg_file = io_.tryfile(1)
+            cfg_file = io_.tryfile(mode='w')
             cfg_file.write(DFLT_CFG)
             cfg_file.close()
         cfg_file = io_.tryfile()
@@ -134,15 +134,15 @@ class Config:
         sch = ''
         for s in spl:
             if s in ('artist', 'title'):
-                sch = sch + meta_.put_missing(t, s)
+                sch += meta_.put_missing(t, s)
             elif s == 'tracknumber':
-                sch = sch + str_.leadzero(t)
+                sch += str_.leadzero(t)
             elif s == 'albumartist':
-                sch = sch + meta_.data['albumartist']
+                sch += meta_.data['albumartist']
             elif s == 'album':
-                sch = sch + meta_.data['album']
+                sch += meta_.data['album']
             else:
-                sch = sch + s
+                sch += s
         spl = sch.split('|')
         if len(spl) == 2:
             if spl[1] == 'capitalize': sch = spl[0].capitalize()
@@ -166,10 +166,6 @@ class Strings:
     def leadzero(self, n):
         nn = str(n).zfill(self.pad)
         return nn
-    def stripquotes(self, s):
-        s = re.sub('^"', '', s)
-        s = re.sub('"$', '', s)
-        return s
     def getlength(self, n):
         smpl_freq = meta_.data['wavparams'][2]
         fr = divmod(n, smpl_freq)
@@ -177,7 +173,7 @@ class Strings:
         m = ms[0]
         s = ms[1]
         f = fr[1] / (smpl_freq / 75)
-        lngth = self.leadzero(m) + self.enclose(':', self.leadzero(s)) + \
+        lngth = self.leadzero(m) + ':' + self.leadzero(s) + ':' + \
             self.leadzero(f)
         return lngth
     def getidx(self, s):
@@ -189,13 +185,10 @@ class Strings:
         return idx_pos
     def linehas(self, n, s):
         result = 0
-        if re.search(n+'\s+\d+:\d+:\d+', s):
-            result = 1
+        if re.search(n+'\s+\d+:\d+:\d+', s): result = 1
         return result
     def repl_time(self, n, s):
         return re.sub('\d+:\d+:\d+', self.getlength(n), s)
-    def enclose(self, s1, s2):
-        return s1 + s2 + s1
 
 class Meta:
     def __init__(self):
@@ -250,24 +243,19 @@ class Meta:
                 f = cfg_.scheme(t, 'mult_files_va')
             else:
                 f = cfg_.scheme(t, 'mult_files')
-        f = re.sub('[*":/\\\?]', '_', f)
-        f = f + '.' + argv_.format
+        f = re.sub('[*":/\\\?]', '_', f) + '.' + argv_.format
         return f
 
 class IO:
     def __init__(self):
         self.trknum = 0
         self.fname = ''
-    def tryfile(self, write = 0):
-        if write == 1:
-            mode, mode_str = 'wb', 'writing'
-        else:
-            mode, mode_str = 'rb', 'reading'
+    def tryfile(self, mode='r'):
         try:
             f = open(self.fname, mode)
         except IOError, (errno, strerror):
-            errstr = 'cannot open "%s" for %s: %s' % \
-                (self.fname, mode_str, strerror.decode(encoding))
+            errstr = 'cannot open "%s": %s' % \
+                (self.fname, strerror.decode(encoding))
             str_.pollute(errstr, die=1)
         return f
     def wav_rd(self):
@@ -305,7 +293,7 @@ class IO:
         cfg_.section = argv_.format
         tag_str = ''
         if argv_.format == 'wav':
-            f = self.tryfile(1)
+            f = self.tryfile(mode='wb')
             w = (f, None)
         elif cfg_.read('encode', 1):
             s = cfg_.get_cmdline('encode', [self.fname])
@@ -335,7 +323,7 @@ class Audio:
             'WAVE', 'fmt ', 16, wave.WAVE_FORMAT_PCM, params[0], params[2],\
             params[0] * params[2] * params[1], params[0] * params[1],\
             params[1] * 8, 'data')
-        hdr = hdr + struct.pack('<l', datalength)
+        hdr += struct.pack('<l', datalength)
         return hdr
     def wr_chunks(self):
         smpl_freq = meta_.data['wavparams'][2]
@@ -423,18 +411,16 @@ class Cue:
     def parse(self, src):
         trknum = 1
         for line in src:
-            line = line.decode(self.encoding).rstrip('\r\n')
+            line = line.decode(self.encoding)
             if line.find('PERFORMER') != -1:
-                metadata = re.sub('\s*PERFORMER\s+', '', line)#.strip('"')
-                metadata = str_.stripquotes(metadata)
+                metadata = line.split('"')[1]
                 if not meta_.get(1, 'trck'):
                     meta_.data['albumartist'] = metadata
                 else:
                     meta_.put(trknum, 'artist', metadata)
                 self.sheet.append(line)
             elif line.find('TITLE') != -1:
-                metadata = re.sub('\s*TITLE\s+', '', line)#.strip('"')
-                metadata = str_.stripquotes(metadata)
+                metadata = line.split('"')[1]
                 if not meta_.get(1, 'trck'):
                     meta_.data['album'] = metadata
                 else:
@@ -480,7 +466,7 @@ class Cue:
                 idx_pos = str_.getidx(line)
                 meta_.put(trknum, 'idx1', idx_pos)
                 self.sheet.append(line)
-                trknum = trknum + 1
+                trknum += 1
             else:
                 self.sheet.append(line)
         if not self.trackzero_present:
@@ -522,7 +508,7 @@ class Cue:
         gap = 0
         abs_pos = meta_.data['cd_duration']
         for x in xrange(len(cue_.sheet)):
-            line = cue_.sheet.pop(x) + '\n'
+            line = cue_.sheet.pop(x)
             if line.find('FILE') != -1:
                 if cue_.is_singlefile:
                     if meta_.get(trknum, 'idx1') and \
@@ -533,7 +519,7 @@ class Cue:
                         wav_file = meta_.filename(trknum)
                 else:
                     wav_file = meta_.filename(trknum, single=1)
-                wav_file = str_.enclose('"', wav_file)
+                wav_file = '"' + wav_file + '"'
                 line = re.sub('".+"', wav_file, line)
                 cue_.sheet.insert(x, line)
             elif str_.linehas('INDEX\s+00', line):
@@ -559,11 +545,10 @@ class Cue:
                         idx00 = trk_length - gap
                         if not (trknum == 2 and argv_.options.notrackzero):
                             line = str_.repl_time(idx00, line)
-                        line = line + '\r\nFILE "' + \
-                            meta_.filename(trknum) + '" WAVE'
+                        line += 'FILE "' + \
+                            meta_.filename(trknum) + '" WAVE\n'
                 meta_.put(trknum, 'gap', gap)
                 cue_.sheet.insert(x, line)
-
             elif str_.linehas('INDEX\s+01', line):
                 if cue_.is_singlefile:
                     idx01 = 0
@@ -579,8 +564,8 @@ class Cue:
                         if not argv_.options.noncompliant or \
                         (argv_.options.noncompliant and \
                         not meta_.get(trknum+1, 'idx0')):
-                            line = line + '\r\nFILE "' + \
-                                meta_.filename(trknum+1) + '" WAVE'
+                            line += 'FILE "' + \
+                                meta_.filename(trknum+1) + '" WAVE\n'
                     line = str_.repl_time(idx01, line)
                 elif cue_.is_noncompl and trknum > 1:
                     idx01 = meta_.get(trknum-1, 'apos')
@@ -590,7 +575,7 @@ class Cue:
                         meta_.get(trknum, 'idx1')
                     line = str_.repl_time(idx01, line)
                 cue_.sheet.insert(x, line)
-                trknum = trknum + 1
+                trknum += 1
                 gap = 0
             else:
                 cue_.sheet.insert(x, line)
@@ -625,10 +610,10 @@ class Cue:
             meta_.put(trknum, 'spos', start_pos)
             meta_.put(trknum, 'lgth', trk_length)
     def print_(self):
-        statstr = "This cuesheet appears to be of '" + self.type + "' type"
+        statstr = "This cuesheet appears to be of '" + self.type
         if self.is_va:
-            statstr = statstr + ", 'various artists'"
-        statstr = statstr + "...\n\nCD Layout:\n\n"
+            statstr += "', 'various artists"
+        statstr += "' type" + "...\n\nCD Layout:\n\n"
         # check if we display layout for compliant cue
         # i.e. source is (or output requested as) compliant
         want_compliant = 0
@@ -664,7 +649,7 @@ class Cue:
     def save(self):
         cue = ''.join(cue_.sheet).encode(encoding)
         if argv_.options.output:
-            io_.fname = argv_.options.output; result = io_.tryfile(1)
+            io_.fname = argv_.options.output; result = io_.tryfile(mode='w')
             result.write(cue)
             result.close()
         else:
@@ -744,7 +729,7 @@ if __name__ == '__main__':
             orig_cue.close()
         except ImportError:
             pass
-    orig_cue = io_.tryfile()
+    orig_cue = io_.tryfile(mode='Ur')
     cue_.parse(orig_cue)
     cue_.type()
 
