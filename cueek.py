@@ -232,6 +232,8 @@ class Meta:
                 f['TRACKNUMBER'] = str(n)
                 if argv_.format == 'mpc':
                     f['TRACK'] = str(n)
+            else:
+                f['CUESHEET'] = ''.join(cue_.sheet)
             if argv_.options.year:
                 f['DATE'] = argv_.options.year
                 if argv_.format == 'mpc':
@@ -421,8 +423,7 @@ class Cue:
     def parse(self, src):
         trknum = 1
         for line in src:
-            line = line.rstrip('\r\n')
-            line = line.decode(self.encoding)
+            line = line.decode(self.encoding).rstrip('\r\n')
             if line.find('PERFORMER') != -1:
                 metadata = re.sub('\s*PERFORMER\s+', '', line)#.strip('"')
                 metadata = str_.stripquotes(metadata)
@@ -521,7 +522,7 @@ class Cue:
         gap = 0
         abs_pos = meta_.data['cd_duration']
         for x in xrange(len(cue_.sheet)):
-            line = cue_.sheet.pop(x)
+            line = cue_.sheet.pop(x) + '\n'
             if line.find('FILE') != -1:
                 if cue_.is_singlefile:
                     if meta_.get(trknum, 'idx1') and \
@@ -661,19 +662,14 @@ class Cue:
             (str_.getlength(meta_.data['cd_duration']))
         str_.pollute(statstr)
     def save(self):
+        cue = ''.join(cue_.sheet).encode(encoding)
         if argv_.options.output:
             io_.fname = argv_.options.output; result = io_.tryfile(1)
-        else:
-            str_.pollute('\n- - - - - - - - 8< - - - - - - - -\n')
-        for line in cue_.sheet:
-            line = line.encode(encoding) + '\r\n'
-            if argv_.options.output:
-                result.write(line)
-            else:
-                print line,
-        if argv_.options.output:
+            result.write(cue)
             result.close()
         else:
+            str_.pollute('\n- - - - - - - - 8< - - - - - - - -\n')
+            print cue
             str_.pollute('- - - - - - - - 8< - - - - - - - -\n')
 class Files:
     def write(self):
