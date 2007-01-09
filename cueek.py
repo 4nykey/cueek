@@ -22,6 +22,7 @@ translate:      lower
 
 [tags]
 fields_skip:    replaygain_album_gain, replaygain_album_peak, replaygain_track_gain, replaygain_track_peak
+fields_notran:  discid, cuesheet
 #translate:      lower
 
 # encoders and decoders
@@ -147,6 +148,9 @@ class Config:
             sch = 'u"' + sch + '".' + self.read('translate') + '()'
             sch = eval(sch)
         return sch
+    def str2list(self, s):
+        s = [x.strip() for x in self.read(s).upper().split(',')]
+        return s
 
 class Strings:
     def __init__(self):
@@ -189,8 +193,10 @@ class Meta:
     def __init__(self):
         self.data = {'albumartist': 'unknown', 'albumtitle': 'untitled'}
         cfg_.section = 'tags'
-        self.tags_omit = [x.strip() for x in \
-            cfg_.read('fields_skip').upper().split(',')]
+        self.tags_omit = cfg_.str2list('fields_skip')
+        self.tags_dontranslate = cfg_.str2list('fields_notran')
+        if cfg_.read('translate') in cfg_.case_conv:
+            self.translate = '.' + cfg_.read('translate') + '()'
     def put(self, entry, val, tn='album'):
         if isinstance(tn, int): tn = str_.leadzero(tn)
         entry = tn + entry
@@ -230,13 +236,11 @@ class Meta:
             else:
                 tags.append(['CUESHEET', ''.join(cue_.sheet)])
             # convert case if requested and write to file
-            func = "x[1]"
-            if cfg_.read('translate') in cfg_.case_conv:
-                func += '.' + cfg_.read('translate') + '()'
-            values = [eval(func) for x in tags]
-            for x in xrange(len(tags)):
-                (tag, val) = (tags[x][0], values[x])
-                if tag not in self.tags_omit: f[tag] = val
+            for tag in tags:
+                (t, v) = tag
+                if t not in self.tags_dontranslate and self.translate:
+                    v = eval(repr(v) + self.translate)
+                if t not in self.tags_omit: f[t] = v
             f.save()
     def filename(self, t, single=0):
         if single:
