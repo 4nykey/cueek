@@ -10,7 +10,8 @@ from optparse import OptionParser
 from subprocess import *
 from mutagen import File
 
-DFLT_CFG="""# these below are available for filename generation and tagging:
+DFLT_CFG="""
+# these below are available for filename generation and tagging:
 #   metadata fields: albumartist, artist, album, title, tracknumber
 #   translation modes: lower, upper, swapcase, capitalize, title
 
@@ -56,22 +57,21 @@ class Argv:
         opt_parse.add_option("-m", "--charmap",
             help="decode cuesheet from specified CHARMAP", metavar="CHARMAP")
         opt_parse.add_option("-o", "--output",
-            help="output resulting cuesheet to the FILE, instead of printing\
- to stdout", metavar="FILE")
+            help="output resulting cuesheet to the FILE, instead of printing "
+            "to stdout", metavar="FILE")
         opt_parse.add_option("-c", "--compliant",
             action="store_false", dest="noncompliant", default=True,
             help="output to 'compliant' cuesheet")
         opt_parse.add_option("-0", "--zero-track",
             action="store_false", dest="notrackzero", default=True,
-            help="when splitting to 'non-compliant' cue, write contents of the\
- first track pre-gap to a file with tracknumber 00")
+            help="when splitting to 'non-compliant' cue, write contents of "
+            "the first track pre-gap to a file with tracknumber 00")
         opt_parse.add_option("-w", "--write",
             action="store_false", dest="nowrite", default=True,
             help='additionally write splitted/merged audio files')
         opt_parse.add_option("-e", "--encode",
-            help="encode audio files to specified FORMAT(s) (use comma as\
- separator)",
-            metavar="FORMAT")
+            help="encode audio files to specified FORMAT(s) (use comma as "
+            "separator)", metavar="FORMAT")
         opt_parse.add_option("-r", "--replay-gain",
             action="store_false", dest="norg", default=True,
             help="apply replay gain to encoded file(s)")
@@ -81,12 +81,12 @@ class Argv:
 
         opt_parse.set_usage('%prog [options] <in.cue>')
 
-        opt_parse.set_description("This script converts a cuesheet created\
- with EAC to another type. If input cuesheet is 'single-file' (i.e CD image),\
- it will be converted ('splitted') to 'multiple-files' cue. Referenced audio\
- file can be splitted to separate files accordingly. And vice versa,\
- 'multiple-files' cue will be converted ('merged') to 'single-file' one,\
- while optionally merging referenced files to single audio file.")
+        opt_parse.set_description("This script converts a cuesheet to another "
+            "type. If input cuesheet is 'single-file' (i.e CD image), it will "
+            "be converted ('splitted') to 'multiple-files' one. "
+            "Referenced audio file can be splitted accordingly. "
+            "Vice versa, 'multiple-files' cue will be converted ('merged') to "
+            "'single-file' one, while optionally merging referenced files.")
 
         (self.options, self.args) = opt_parse.parse_args()
 
@@ -166,7 +166,6 @@ class Strings:
         nn = str(n).zfill(self.pad)
         return nn
     def getlength(self, n):
-        smpl_freq = meta_.get('wavparams')[2]
         fr = divmod(n, smpl_freq)
         ms = divmod(fr[0], 60)
         m = ms[0]
@@ -176,7 +175,6 @@ class Strings:
             self.leadzero(f)
         return lngth
     def getidx(self, s):
-        smpl_freq = meta_.get('wavparams')[2]
         idx = s.split(':')
         mm = idx[0]; mm = mm[-2:]; ss = idx[1]; ff = idx[2]
         idx_pos = ((int(mm) * 60 + int(ss)) * smpl_freq + int(ff) *
@@ -255,8 +253,7 @@ class Meta:
 
 class IO:
     def __init__(self):
-        self.trknum = 0
-        self.fname = ''
+        (self.trknum, self.fname) = (0, '')
     def tryfile(self, mode='r'):
         try:
             f = open(self.fname, mode)
@@ -317,10 +314,8 @@ class Audio:
     #smpl_freq = 44100
     #frm_length = smpl_freq / 75
     def __init__(self):
-        self.frnum = 0
-        self.hdr_frnum = 0
-        self.fin = None
-        self.fout = None
+        (self.frnum, self.hdr_frnum) = 2 * (0,)
+        (self.fin, self.fout) = 2 * (None,)
     def get_params(self):
         return self.fin.getparams()
     def gen_hdr(self):
@@ -333,7 +328,6 @@ class Audio:
         hdr += struct.pack('<l', datalength)
         return hdr
     def wr_chunks(self):
-        smpl_freq = meta_.get('wavparams')[2]
         step = smpl_freq * 10 # 10s chunks
         if self.hdr_frnum:
             hdr = self.gen_hdr()
@@ -407,14 +401,9 @@ class Audio:
 
 class Cue:
     def __init__(self):
-        self.pregap = 0
-        self.trackzero_present = 0
-        self.is_compl = 0
-        self.is_noncompl = 0
-        self.is_singlefile = 0
-        self.is_va = 0
-        self.encoding = encoding
-        self.sheet = []
+        (self.pregap, self.trackzero_present, self.is_compl, self.is_noncompl, 
+            self.is_singlefile, self.is_va) = 6 * (0,)
+        (self.encoding, self.sheet) = (encoding, [])
     def probe(self, fn):
         size = os.path.getsize(fn)
         io_.fname = fn
@@ -473,14 +462,15 @@ class Cue:
                 aud_.fin = io_.wav_rd()[0]
                 params = aud_.get_params()
                 meta_.put('wavparams', params)
+                global smpl_freq
+                smpl_freq = params[2]
                 aud_.fin.close()
 
                 framenum = params[3]
                 if not meta_.get('trck', 1):
-                    meta_.put('name', ref_file, 0)
-                    meta_.put('lgth', framenum, 0)
-                    meta_.put('name', ref_file, 1)
-                    meta_.put('lgth', framenum, 1)
+                    for x in 0, 1:
+                        meta_.put('name', ref_file, x)
+                        meta_.put('lgth', framenum, x)
                 else:
                     meta_.put('name', ref_file, trknum)
                     meta_.put('lgth', framenum, trknum)
@@ -507,8 +497,7 @@ class Cue:
         meta_.put('numoftracks', trknum)
         meta_.put('duration', abs_pos)
     def type(self):
-        gaps_present = 0
-        self.is_va = 0
+        (gaps_present, self.is_va) = 2 * (0,)
         if not meta_.get('name', 2):
             self.is_singlefile = 1
             cue_type = 'single-file'
@@ -536,10 +525,7 @@ class Cue:
                 self.is_va = 1
                 break
     def modify(self):
-        trknum = 1
-        gap = 0
-        cue = []
-        wav_file = ''
+        (trknum, gap, cue, wav_file) = (1, 0, [], '')
         abs_pos = meta_.get('duration')
         for x in xrange(len(self.sheet)):
             line = self.sheet[x]
@@ -661,9 +647,7 @@ class Cue:
         (self.is_singlefile and not argv_.options.noncompliant)):
             want_compliant = 1
         for trknum in xrange(meta_.get('numoftracks')):
-            gap_str = ''
-            trk_str = ''
-            lgth_str = ''
+            (gap_str, trk_str, lgth_str) = 3 * ('',)
             if want_compliant:
                 gap = meta_.get('gap', trknum)
             else:
