@@ -21,7 +21,8 @@ single_file:    %albumartist% - %album%
 translate:      lower
 
 [tags]
-translate:      lower
+fields_skip:    replaygain_album_gain, replaygain_album_peak, replaygain_track_gain, replaygain_track_peak
+#translate:      lower
 
 # encoders and decoders
 # decoders must be able to write to stdout, encoders - read from stdin
@@ -102,10 +103,9 @@ class Argv:
 
 class Config:
     def __init__(self):
-        self.cfg_ = os.path.expanduser('~/.cueekrc')
         self.cfg_parse = ConfigParser.ConfigParser()
-        io_.fname = self.cfg_
-        if not os.path.isfile(self.cfg_): # write config file on first run
+        io_.fname = os.path.expanduser('~/.cueekrc')
+        if not os.path.isfile(io_.fname): # write config file on first run
             cfg_file = io_.tryfile(mode='w')
             cfg_file.write(DFLT_CFG)
             cfg_file.close()
@@ -188,6 +188,9 @@ class Strings:
 class Meta:
     def __init__(self):
         self.data = {'albumartist': 'unknown', 'albumtitle': 'untitled'}
+        cfg_.section = 'tags'
+        self.tags_omit = [x.strip() for x in \
+            cfg_.read('fields_skip').upper().split(',')]
     def put(self, entry, val, tn='album'):
         if isinstance(tn, int): tn = str_.leadzero(tn)
         entry = tn + entry
@@ -217,9 +220,15 @@ class Meta:
                 tags.append(['ALBUMARTIST', self.get('artist')])
             tags.append(['ARTIST', self.add_missing('artist', n)])
             tags.append(['ALBUM', self.get('title')])
+            if meta_.get('comment'):
+                for x in meta_.get('comment'):
+                    tags.append([x[0].upper(), ' '.join(x[1:])])
             if cue_.is_singlefile:
                 tags.append(['TITLE', self.add_missing('title', n)])
                 tags.append(['TRACKNUMBER', str(n)])
+                if meta_.get('comment', n):
+                    for x in meta_.get('comment', n):
+                        tags.append([x[0].upper(), ' '.join(x[1:])])
             else:
                 tags.append(['CUESHEET', ''.join(cue_.sheet)])
             # convert case if requested and write to file
@@ -229,7 +238,7 @@ class Meta:
             values = [eval(func) for x in tags]
             for x in xrange(len(tags)):
                 (tag, val) = (tags[x][0], values[x])
-                f[tag] = val
+                if tag not in self.tags_omit: f[tag] = val
             f.save()
     def filename(self, t, single=0):
         if single:
@@ -448,6 +457,14 @@ class Cue:
                 (metadata, line) = self.dblquotes(line)
                 if meta_.get('trck', tn=1): tn = trknum
                 meta_.put('title', metadata, tn=tn)
+                self.sheet.append(line)
+            elif line.find('REM') != -1:
+                if meta_.get('trck', tn=1): tn = trknum
+                metadata = []
+                if meta_.get('comment', tn=tn):
+                    metadata = meta_.get('comment', tn=tn)
+                metadata.append(line.split()[1:])
+                meta_.put('comment', metadata, tn=tn)
                 self.sheet.append(line)
             elif line.find('FILE') != -1:
                 spl_lines = line.split('"')
@@ -734,9 +751,9 @@ if __name__ == '__main__':
     argv_ = Argv()
     str_ = Strings()
     io_ = IO()
+    cfg_ = Config()
     meta_ = Meta()
     aud_ = Audio()
-    cfg_ = Config()
     cue_ = Cue()
     files_ = Files()
 
