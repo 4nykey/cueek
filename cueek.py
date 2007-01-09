@@ -208,7 +208,7 @@ class Meta:
         if not self.get(entry, tn=tn):
             if entry == 'artist': result = self.get(entry)
         else:
-            result = self.get(entry, tn=tn)
+            result = self.get(entry, tn)
         return result
     def tag(self, n = 0):
         cfg_.section = 'tags'
@@ -220,15 +220,13 @@ class Meta:
                 tags.append(['ALBUMARTIST', self.get('artist')])
             tags.append(['ARTIST', self.add_missing('artist', n)])
             tags.append(['ALBUM', self.get('title')])
-            if meta_.get('comment'):
-                for x in meta_.get('comment'):
-                    tags.append([x[0].upper(), ' '.join(x[1:])])
+            for x in ('album', n):
+                if meta_.get('comment', x):
+                    for y in meta_.get('comment', x):
+                        tags.append([y[0].upper(), ' '.join(y[1:])])
             if cue_.is_singlefile:
                 tags.append(['TITLE', self.add_missing('title', n)])
                 tags.append(['TRACKNUMBER', str(n)])
-                if meta_.get('comment', n):
-                    for x in meta_.get('comment', n):
-                        tags.append([x[0].upper(), ' '.join(x[1:])])
             else:
                 tags.append(['CUESHEET', ''.join(cue_.sheet)])
             # convert case if requested and write to file
@@ -366,7 +364,7 @@ class Audio:
                 (self.fin, child_dec) = io_.wav_rd()
                 self.frnum = self.get_params()[3]
 
-                abs_pos = meta_.get('apos', tn=x-1)
+                abs_pos = meta_.get('apos', x-1)
                 statstr = '%s >> %s @ %s\n' % \
                     (_fin[x], _fout, str_.getlength(abs_pos))
                 str_.pollute(statstr, override=1)
@@ -384,7 +382,7 @@ class Audio:
             (self.fin, child_dec) = io_.wav_rd()
             self.get_params()
             for x in xrange(len(_fout)):
-                if meta_.get('idx1', tn=1) and not argv_.options.notrackzero:
+                if meta_.get('idx1', 1) and not argv_.options.notrackzero:
                     io_.trknum = x
                 else:
                     io_.trknum = x + 1
@@ -450,21 +448,21 @@ class Cue:
                 line = line.decode(self.encoding)
             if line.find('PERFORMER') != -1:
                 (metadata, line) = self.dblquotes(line)
-                if meta_.get('trck', tn=1): tn = trknum
-                meta_.put('artist', metadata, tn=tn)
+                if meta_.get('trck', 1): tn = trknum
+                meta_.put('artist', metadata, tn)
                 self.sheet.append(line)
             elif line.find('TITLE') != -1:
                 (metadata, line) = self.dblquotes(line)
-                if meta_.get('trck', tn=1): tn = trknum
-                meta_.put('title', metadata, tn=tn)
+                if meta_.get('trck', 1): tn = trknum
+                meta_.put('title', metadata, tn)
                 self.sheet.append(line)
             elif line.find('REM') != -1:
-                if meta_.get('trck', tn=1): tn = trknum
+                if meta_.get('trck', 1): tn = trknum
                 metadata = []
-                if meta_.get('comment', tn=tn):
-                    metadata = meta_.get('comment', tn=tn)
+                if meta_.get('comment', tn):
+                    metadata = meta_.get('comment', tn)
                 metadata.append(line.split()[1:])
-                meta_.put('comment', metadata, tn=tn)
+                meta_.put('comment', metadata, tn)
                 self.sheet.append(line)
             elif line.find('FILE') != -1:
                 spl_lines = line.split('"')
@@ -478,35 +476,35 @@ class Cue:
                 aud_.fin.close()
 
                 framenum = params[3]
-                if not meta_.get('trck', tn=1):
+                if not meta_.get('trck', 1):
                     self.sheet.append(line)
-                    meta_.put('name', ref_file, tn=0)
-                    meta_.put('lgth', framenum, tn=0)
-                    meta_.put('name', ref_file, tn=1)
-                    meta_.put('lgth', framenum, tn=1)
+                    meta_.put('name', ref_file, 0)
+                    meta_.put('lgth', framenum, 0)
+                    meta_.put('name', ref_file, 1)
+                    meta_.put('lgth', framenum, 1)
                 else:
-                    meta_.put('name', ref_file, tn=trknum)
-                    meta_.put('lgth', framenum, tn=trknum)
-                if meta_.get('lgth', tn=0) != meta_.get('lgth', tn=1) \
+                    meta_.put('name', ref_file, trknum)
+                    meta_.put('lgth', framenum, trknum)
+                if meta_.get('lgth', 0) != meta_.get('lgth', 1) \
                 and trknum == 1: # track zero
                     self.trackzero_present = 1
-                    abs_pos = meta_.get('lgth', tn=0)
-                    meta_.put('apos', abs_pos, tn=0)
-                abs_pos = meta_.get('apos', tn=trknum-1) + framenum
-                meta_.put('apos', abs_pos, tn=trknum)
+                    abs_pos = meta_.get('lgth', 0)
+                    meta_.put('apos', abs_pos, 0)
+                abs_pos = meta_.get('apos', trknum-1) + framenum
+                meta_.put('apos', abs_pos, trknum)
             elif line.find('TRACK') != -1:
-                meta_.put('trck', 1, tn=trknum)
+                meta_.put('trck', 1, trknum)
                 self.sheet.append(line)
             elif str_.linehas('PREGAP', line):
                 self.pregap = str_.getidx(line)
                 self.sheet.append(line)
             elif str_.linehas('INDEX\s+00', line):
                 idx_pos = str_.getidx(line)
-                meta_.put('idx0', idx_pos, tn=trknum)
+                meta_.put('idx0', idx_pos, trknum)
                 self.sheet.append(line)
             elif str_.linehas('INDEX\s+01', line):
                 idx_pos = str_.getidx(line)
-                meta_.put('idx1', idx_pos, tn=trknum)
+                meta_.put('idx1', idx_pos, trknum)
                 self.sheet.append(line)
                 trknum += 1
             else:
@@ -520,17 +518,17 @@ class Cue:
     def type(self):
         gaps_present = 0
         self.is_va = 0
-        if not meta_.get('name', tn=2):
+        if not meta_.get('name', 2):
             self.is_singlefile = 1
             cue_type = 'single-file'
         else:
             for x in xrange(2, meta_.get('numoftracks')):
-                if meta_.get('idx0', tn=x):
+                if meta_.get('idx0', x):
                     cue_type = 'non-compliant'
                     gaps_present = 1
                     self.is_noncompl = 1
                     break
-                elif meta_.get('idx1', tn=x):
+                elif meta_.get('idx1', x):
                     cue_type = 'compliant'
                     self.is_compl = 1
                     break
@@ -542,8 +540,8 @@ class Cue:
                     str_.pollute(errstr, die=1)
         self.type = cue_type
         for x in xrange(meta_.get('numoftracks')):
-            if meta_.get('artist', tn=x) and not \
-            meta_.get('artist', tn=x) == meta_.get('artist'):
+            if meta_.get('artist', x) and not \
+            meta_.get('artist', x) == meta_.get('artist'):
                 self.is_va = 1
                 break
     def modify(self):
@@ -554,7 +552,7 @@ class Cue:
             line = cue_.sheet.pop(x)
             if line.find('FILE') != -1:
                 if cue_.is_singlefile:
-                    if meta_.get('idx1', tn=trknum) and \
+                    if meta_.get('idx1', trknum) and \
                     argv_.options.noncompliant and \
                     not argv_.options.notrackzero:
                         wav_file = meta_.filename(trknum-1)
@@ -567,55 +565,55 @@ class Cue:
                 cue_.sheet.insert(x, line)
             elif str_.linehas('INDEX\s+00', line):
                 if cue_.is_noncompl:
-                    gap = meta_.get('lgth', tn=trknum-1) - \
-                        meta_.get('idx0', tn=trknum)
-                    idx00 = meta_.get('apos', tn=trknum-1) - gap
+                    gap = meta_.get('lgth', trknum-1) - \
+                        meta_.get('idx0', trknum)
+                    idx00 = meta_.get('apos', trknum-1) - gap
                     line = str_.repl_time(idx00, line)
                 elif cue_.is_compl:
-                    gap = meta_.get('idx1', tn=trknum)
-                    idx00 = meta_.get('apos', tn=trknum-1)
+                    gap = meta_.get('idx1', trknum)
+                    idx00 = meta_.get('apos', trknum-1)
                     line = str_.repl_time(idx00, line)
                 elif cue_.is_singlefile:
-                    if meta_.get('idx0', tn=trknum) or \
-                    (trknum == 1 and meta_.get('idx1', tn=trknum)):
-                        gap = meta_.get('idx1', tn=trknum) - \
-                            meta_.get('idx0', tn=trknum)
+                    if meta_.get('idx0', trknum) or \
+                    (trknum == 1 and meta_.get('idx1', trknum)):
+                        gap = meta_.get('idx1', trknum) - \
+                            meta_.get('idx0', trknum)
                     if not argv_.options.noncompliant:
                         line = str_.repl_time(0, line)
                     elif trknum > 1 or not argv_.options.notrackzero:
-                        trk_length = meta_.get('idx1', tn=trknum) - \
-                            meta_.get('idx1', tn=trknum-1)
+                        trk_length = meta_.get('idx1', trknum) - \
+                            meta_.get('idx1', trknum-1)
                         idx00 = trk_length - gap
                         if not (trknum == 2 and argv_.options.notrackzero):
                             line = str_.repl_time(idx00, line)
                         line += 'FILE "' + \
                             meta_.filename(trknum) + '" WAVE\n'
-                meta_.put('gap', gap, tn=trknum)
+                meta_.put('gap', gap, trknum)
                 cue_.sheet.insert(x, line)
             elif str_.linehas('INDEX\s+01', line):
                 if cue_.is_singlefile:
                     idx01 = 0
                     if trknum == 1:
                         if not argv_.options.noncompliant or \
-                        (meta_.get('idx1', tn=trknum) and \
+                        (meta_.get('idx1', trknum) and \
                         argv_.options.notrackzero):
-                            idx01 = meta_.get('idx1', tn=trknum)
+                            idx01 = meta_.get('idx1', trknum)
                     elif not argv_.options.noncompliant and \
-                    meta_.get('idx0', tn=trknum):
+                    meta_.get('idx0', trknum):
                         idx01 = gap
-                    if meta_.get('idx1', tn=trknum+1):
+                    if meta_.get('idx1', trknum+1):
                         if not argv_.options.noncompliant or \
                         (argv_.options.noncompliant and \
-                        not meta_.get('idx0', tn=trknum+1)):
+                        not meta_.get('idx0', trknum+1)):
                             line += 'FILE "' + \
                                 meta_.filename(trknum+1) + '" WAVE\n'
                     line = str_.repl_time(idx01, line)
                 elif cue_.is_noncompl and trknum > 1:
-                    idx01 = meta_.get('apos', tn=trknum-1)
+                    idx01 = meta_.get('apos', trknum-1)
                     line = str_.repl_time(idx01, line)
                 else:
-                    idx01 = meta_.get('apos', tn=trknum-1) + \
-                        meta_.get('idx1', tn=trknum)
+                    idx01 = meta_.get('apos', trknum-1) + \
+                        meta_.get('idx1', trknum)
                     line = str_.repl_time(idx01, line)
                 cue_.sheet.insert(x, line)
                 trknum += 1
@@ -628,31 +626,31 @@ class Cue:
         if self.trackzero_present: start = 0
         for trknum in xrange(start, meta_.get('numoftracks')):
             if not argv_.options.noncompliant:
-                if trknum > 1 and not meta_.get('idx0', tn=trknum):
-                    start_pos = meta_.get('idx1', tn=trknum)
+                if trknum > 1 and not meta_.get('idx0', trknum):
+                    start_pos = meta_.get('idx1', trknum)
                 else:
-                    start_pos = meta_.get('idx0', tn=trknum)
-                if not meta_.get('idx1', tn=trknum+1):
+                    start_pos = meta_.get('idx0', trknum)
+                if not meta_.get('idx1', trknum+1):
                     end_pos = abs_pos
-                elif not meta_.get('idx0', tn=trknum+1):
-                    end_pos = meta_.get('idx1', tn=trknum+1)
+                elif not meta_.get('idx0', trknum+1):
+                    end_pos = meta_.get('idx1', trknum+1)
                 else:
-                    end_pos = meta_.get('idx0', tn=trknum+1)
+                    end_pos = meta_.get('idx0', trknum+1)
             else:
-                start_pos = meta_.get('idx1', tn=trknum)
-                if meta_.get('idx1', tn=trknum+1):
-                    end_pos = meta_.get('idx1', tn=trknum+1)
+                start_pos = meta_.get('idx1', trknum)
+                if meta_.get('idx1', trknum+1):
+                    end_pos = meta_.get('idx1', trknum+1)
                 else:
                     end_pos = abs_pos
-                if trknum == 1 and meta_.get('idx1', tn=1):
+                if trknum == 1 and meta_.get('idx1', 1):
                     if argv_.options.notrackzero:
                         start_pos = 0
                     else:
-                        length = meta_.get('idx1', tn=1)
-                        meta_.put('lgth', length, tn=0)
+                        length = meta_.get('idx1', 1)
+                        meta_.put('lgth', length, 0)
             trk_length = end_pos - start_pos
-            meta_.put('spos', start_pos, tn=trknum)
-            meta_.put('lgth', trk_length, tn=trknum)
+            meta_.put('spos', start_pos, trknum)
+            meta_.put('lgth', trk_length, trknum)
     def print_(self):
         statstr = "This cuesheet appears to be of '" + self.type
         if self.is_va:
@@ -669,11 +667,11 @@ class Cue:
             trk_str = ''
             lgth_str = ''
             if want_compliant:
-                gap = meta_.get('gap', tn=trknum)
+                gap = meta_.get('gap', trknum)
             else:
-                gap = meta_.get('gap', tn=trknum+1)
-            if meta_.get('lgth', tn=trknum):
-                real_length = meta_.get('lgth', tn=trknum)
+                gap = meta_.get('gap', trknum+1)
+            if meta_.get('lgth', trknum):
+                real_length = meta_.get('lgth', trknum)
                 length = real_length - gap
                 trk_str = 'Track %s (%s)\n' % \
                     (str_.leadzero(trknum), str_.getlength(real_length))
@@ -709,16 +707,16 @@ class Files:
             lengths=[]
             if cue_.is_singlefile:
                 for x in xrange(n):
-                    if meta_.get('lgth', tn=x):
+                    if meta_.get('lgth', x):
                         out_file = meta_.filename(x)
                         files.append(out_file)
-                        lengths.append(meta_.get('lgth', tn=x))
-                aud_.write(meta_.get('name', tn=1), files, lengths)
+                        lengths.append(meta_.get('lgth', x))
+                aud_.write(meta_.get('name', 1), files, lengths)
                 self.apply_rg(files)
             else:
                 for x in xrange(n):
-                    if meta_.get('name', tn=x):
-                        files.append(meta_.get('name', tn=x))
+                    if meta_.get('name', x):
+                        files.append(meta_.get('name', x))
                 out_file = meta_.filename(x, single=1)
                 aud_.write(files, out_file)
                 self.apply_rg([out_file])
@@ -738,8 +736,8 @@ class Files:
         str_.pollute('\nDeleting files...\n\n')
         n = meta_.get('numoftracks')
         for x in xrange(1, n):
-            if meta_.get('name', tn=x):
-                f = meta_.get('name', tn=x)
+            if meta_.get('name', x):
+                f = meta_.get('name', x)
                 str_.pollute('<<< %s\n' % f, override=1)
                 os.remove(f)
 
