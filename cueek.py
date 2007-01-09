@@ -415,26 +415,30 @@ class Cue:
         self.is_va = 0
         self.encoding = encoding
         self.sheet = []
-    def probe(self):
-        f = os.open(io_.fname, os.O_RDONLY)
-        size = os.fstat(f)[-4]
+    def probe(self, fn):
+        size = os.path.getsize(fn)
+        io_.fname = fn
+        f = io_.tryfile(mode='Ur')
         if size >= long(16384):
             _f = File(io_.fname)
             try:
-                self.sheet = _f['CUESHEET'][0].splitlines(1)
+                cue = _f['CUESHEET'][0].splitlines(1)
             except (KeyError, TypeError):
                 str_.pollute('failed to probe this cuesheet', die=1)
-        elif argv_.options.charmap:
-            self.encoding = argv_.options.charmap
         else:
-            try:
-                import chardet
-                data = os.read(f, size)
-                self.encoding = chardet.detect(data)['encoding']
-            except ImportError:
-                pass
-        os.close(f)
-        return self.sheet
+            if argv_.options.charmap:
+                self.encoding = argv_.options.charmap
+            else:
+                try:
+                    import chardet
+                    _f = io_.tryfile()
+                    self.encoding = chardet.detect(_f.read())['encoding']
+                    _f.close()
+                except ImportError:
+                    pass
+            cue = [line.decode(self.encoding) for line in f]
+        f.close()
+        return cue
     def dblquotes(self, s):
         """This is to allow double quotes inside PERFORMER and TITLE fields,
         so they could be used for tagging, while replacing them with single
@@ -448,8 +452,6 @@ class Cue:
         trknum = 1
         for line in src:
             tn = 'album'
-            if not isinstance(line, unicode):
-                line = line.decode(self.encoding)
             if re.search('PERFORMER', line, re.I):
                 (metadata, line) = self.dblquotes(line)
                 if meta_.get('trck', 1): tn = trknum
@@ -469,11 +471,9 @@ class Cue:
                 meta_.put('comment', metadata, tn)
                 self.sheet.append(line)
             elif re.search('FILE', line, re.I):
-                spl_lines = line.split('"')
-                ref_file = spl_lines[1]
+                ref_file = line.split('"')[1]
 
-                if isinstance(src, file):
-                    io_.fname = ref_file
+                io_.fname = ref_file
                 aud_.fin = io_.wav_rd()[0]
                 params = aud_.get_params()
                 meta_.put('wavparams', params)
@@ -517,8 +517,6 @@ class Cue:
             del meta_.data['00lgth']
         meta_.put('numoftracks', trknum)
         meta_.put('duration', abs_pos)
-        if isinstance(src, file):
-            src.close()
     def type(self):
         gaps_present = 0
         self.is_va = 0
@@ -552,10 +550,10 @@ class Cue:
         trknum = 1
         gap = 0
         abs_pos = meta_.get('duration')
-        for x in xrange(len(cue_.sheet)):
-            line = cue_.sheet.pop(x)
+        for x in xrange(len(self.sheet)):
+            line = self.sheet.pop(x)
             if re.search('FILE', line, re.I):
-                if cue_.is_singlefile:
+                if self.is_singlefile:
                     if meta_.get('idx1', trknum) and \
                     argv_.options.noncompliant and \
                     not argv_.options.notrackzero:
@@ -566,18 +564,18 @@ class Cue:
                     wav_file = meta_.filename(trknum, single=1)
                 wav_file = '"' + wav_file + '"'
                 line = re.sub('".+"', wav_file, line)
-                cue_.sheet.insert(x, line)
+                self.sheet.insert(x, line)
             elif str_.linehas('INDEX\s+00', line):
-                if cue_.is_noncompl:
+                if self.is_noncompl:
                     gap = meta_.get('lgth', trknum-1) - \
                         meta_.get('idx0', trknum)
                     idx00 = meta_.get('apos', trknum-1) - gap
                     line = str_.repl_time(idx00, line)
-                elif cue_.is_compl:
+                elif self.is_compl:
                     gap = meta_.get('idx1', trknum)
                     idx00 = meta_.get('apos', trknum-1)
                     line = str_.repl_time(idx00, line)
-                elif cue_.is_singlefile:
+                elif self.is_singlefile:
                     if meta_.get('idx0', trknum) or \
                     (trknum == 1 and meta_.get('idx1', trknum)):
                         gap = meta_.get('idx1', trknum) - \
@@ -593,9 +591,9 @@ class Cue:
                         line += 'FILE "' + \
                             meta_.filename(trknum) + '" WAVE\n'
                 meta_.put('gap', gap, trknum)
-                cue_.sheet.insert(x, line)
+                self.sheet.insert(x, line)
             elif str_.linehas('INDEX\s+01', line):
-                if cue_.is_singlefile:
+                if self.is_singlefile:
                     idx01 = 0
                     if trknum == 1:
                         if not argv_.options.noncompliant or \
@@ -612,18 +610,18 @@ class Cue:
                             line += 'FILE "' + \
                                 meta_.filename(trknum+1) + '" WAVE\n'
                     line = str_.repl_time(idx01, line)
-                elif cue_.is_noncompl and trknum > 1:
+                elif self.is_noncompl and trknum > 1:
                     idx01 = meta_.get('apos', trknum-1)
                     line = str_.repl_time(idx01, line)
                 else:
                     idx01 = meta_.get('apos', trknum-1) + \
                         meta_.get('idx1', trknum)
                     line = str_.repl_time(idx01, line)
-                cue_.sheet.insert(x, line)
+                self.sheet.insert(x, line)
                 trknum += 1
                 gap = 0
             else:
-                cue_.sheet.insert(x, line)
+                self.sheet.insert(x, line)
     def lengths(self):
         abs_pos = meta_.get('duration')
         start = 1
@@ -663,8 +661,8 @@ class Cue:
         # check if we display layout for compliant cue
         # i.e. source is (or output requested as) compliant
         want_compliant = 0
-        if (cue_.is_compl or
-        (cue_.is_singlefile and not argv_.options.noncompliant)):
+        if (self.is_compl or
+        (self.is_singlefile and not argv_.options.noncompliant)):
             want_compliant = 1
         for trknum in xrange(meta_.get('numoftracks')):
             gap_str = ''
@@ -680,8 +678,8 @@ class Cue:
                 trk_str = 'Track %s (%s)\n' % \
                     (str_.leadzero(trknum), str_.getlength(real_length))
                 lgth_str = ' content: %s\n' % (str_.getlength(length))
-            if cue_.pregap > 0 and trknum == 1:
-                statstr += 'Pregap   (%s)\n' % (str_.getlength(cue_.pregap))
+            if self.pregap > 0 and trknum == 1:
+                statstr += 'Pregap   (%s)\n' % (str_.getlength(self.pregap))
             statstr += trk_str
             if gap:
                 gap_str = '     gap: %s\n' % (str_.getlength(gap))
@@ -693,7 +691,7 @@ class Cue:
             (str_.getlength(meta_.get('duration')))
         str_.pollute(statstr)
     def save(self):
-        cue = ''.join(cue_.sheet).encode(encoding)
+        cue = ''.join(self.sheet).encode(encoding)
         if argv_.options.output:
             io_.fname = argv_.options.output; result = io_.tryfile(mode='w')
             result.write(cue)
@@ -760,13 +758,10 @@ if __name__ == '__main__':
     files_ = Files()
 
     cuename = os.path.abspath(argv_.args[0])
-    io_.fname = cuename
     cuedir = os.path.split(cuename)[0]
     os.chdir(cuedir)
 
-    orig_cue = cue_.probe()
-    if not orig_cue:
-        orig_cue = io_.tryfile(mode='Ur')
+    orig_cue = cue_.probe(cuename)
     cue_.parse(orig_cue)
     cue_.type()
 
