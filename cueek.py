@@ -422,7 +422,7 @@ class Cue:
         if size >= long(16384):
             _f = File(io_.fname)
             try:
-                cue = _f['CUESHEET'][0].splitlines(1)
+                self.sheet = _f['CUESHEET'][0].splitlines(1)
             except (KeyError, TypeError):
                 str_.pollute('failed to probe this cuesheet', die=1)
         else:
@@ -436,9 +436,8 @@ class Cue:
                     _f.close()
                 except ImportError:
                     pass
-            cue = [line.decode(self.encoding) for line in f]
+            self.sheet = [line.decode(self.encoding) for line in f]
         f.close()
-        return cue
     def dblquotes(self, s):
         """This is to allow double quotes inside PERFORMER and TITLE fields,
         so they could be used for tagging, while replacing them with single
@@ -448,20 +447,18 @@ class Cue:
         m = p2[0]
         s = p1[0] + '"' + p2[0].replace('"', "'") + '"' + p2[2]
         return (m, s)
-    def parse(self, src):
+    def parse(self):
         trknum = 1
-        for line in src:
+        for line in self.sheet:
             tn = 'album'
             if re.search('PERFORMER', line, re.I):
-                (metadata, line) = self.dblquotes(line)
+                metadata = self.dblquotes(line)[0]
                 if meta_.get('trck', 1): tn = trknum
                 meta_.put('artist', metadata, tn)
-                self.sheet.append(line)
             elif re.search('TITLE', line, re.I):
-                (metadata, line) = self.dblquotes(line)
+                metadata = self.dblquotes(line)[0]
                 if meta_.get('trck', 1): tn = trknum
                 meta_.put('title', metadata, tn)
-                self.sheet.append(line)
             elif re.search('REM', line, re.I):
                 if meta_.get('trck', 1): tn = trknum
                 metadata = []
@@ -469,7 +466,6 @@ class Cue:
                     metadata = meta_.get('comment', tn)
                 metadata.append(line.split()[1:])
                 meta_.put('comment', metadata, tn)
-                self.sheet.append(line)
             elif re.search('FILE', line, re.I):
                 ref_file = line.split('"')[1]
 
@@ -481,7 +477,6 @@ class Cue:
 
                 framenum = params[3]
                 if not meta_.get('trck', 1):
-                    self.sheet.append(line)
                     meta_.put('name', ref_file, 0)
                     meta_.put('lgth', framenum, 0)
                     meta_.put('name', ref_file, 1)
@@ -498,21 +493,15 @@ class Cue:
                 meta_.put('apos', abs_pos, trknum)
             elif re.search('TRACK', line, re.I):
                 meta_.put('trck', 1, trknum)
-                self.sheet.append(line)
             elif str_.linehas('PREGAP', line):
                 self.pregap = str_.getidx(line)
-                self.sheet.append(line)
             elif str_.linehas('INDEX\s+00', line):
                 idx_pos = str_.getidx(line)
                 meta_.put('idx0', idx_pos, trknum)
-                self.sheet.append(line)
             elif str_.linehas('INDEX\s+01', line):
                 idx_pos = str_.getidx(line)
                 meta_.put('idx1', idx_pos, trknum)
-                self.sheet.append(line)
                 trknum += 1
-            else:
-                self.sheet.append(line)
         if not self.trackzero_present:
             del meta_.data['00lgth']
         meta_.put('numoftracks', trknum)
@@ -549,22 +538,28 @@ class Cue:
     def modify(self):
         trknum = 1
         gap = 0
+        cue = []
+        wav_file = ''
         abs_pos = meta_.get('duration')
         for x in xrange(len(self.sheet)):
-            line = self.sheet.pop(x)
-            if re.search('FILE', line, re.I):
-                if self.is_singlefile:
-                    if meta_.get('idx1', trknum) and \
-                    argv_.options.noncompliant and \
-                    not argv_.options.notrackzero:
-                        wav_file = meta_.filename(trknum-1)
+            line = self.sheet[x]
+            if re.search('PERFORMER|TITLE', line, re.I):
+                line = self.dblquotes(line)[1]
+                cue.append(line)
+            elif re.search('FILE', line, re.I):
+                if not wav_file or self.is_singlefile:
+                    if self.is_singlefile:
+                        if meta_.get('idx1', trknum) and \
+                        argv_.options.noncompliant and \
+                        not argv_.options.notrackzero:
+                            wav_file = meta_.filename(trknum-1)
+                        else:
+                            wav_file = meta_.filename(trknum)
                     else:
-                        wav_file = meta_.filename(trknum)
-                else:
-                    wav_file = meta_.filename(trknum, single=1)
-                wav_file = '"' + wav_file + '"'
-                line = re.sub('".+"', wav_file, line)
-                self.sheet.insert(x, line)
+                        wav_file = meta_.filename(trknum, single=1)
+                    wav_file = '"' + wav_file + '"'
+                    line = re.sub('".+"', wav_file, line)
+                    cue.append(line)
             elif str_.linehas('INDEX\s+00', line):
                 if self.is_noncompl:
                     gap = meta_.get('lgth', trknum-1) - \
@@ -591,7 +586,7 @@ class Cue:
                         line += 'FILE "' + \
                             meta_.filename(trknum) + '" WAVE\n'
                 meta_.put('gap', gap, trknum)
-                self.sheet.insert(x, line)
+                cue.append(line)
             elif str_.linehas('INDEX\s+01', line):
                 if self.is_singlefile:
                     idx01 = 0
@@ -617,11 +612,12 @@ class Cue:
                     idx01 = meta_.get('apos', trknum-1) + \
                         meta_.get('idx1', trknum)
                     line = str_.repl_time(idx01, line)
-                self.sheet.insert(x, line)
+                cue.append(line)
                 trknum += 1
                 gap = 0
             else:
-                self.sheet.insert(x, line)
+                cue.append(line)
+        self.sheet = cue
     def lengths(self):
         abs_pos = meta_.get('duration')
         start = 1
@@ -761,8 +757,8 @@ if __name__ == '__main__':
     cuedir = os.path.split(cuename)[0]
     os.chdir(cuedir)
 
-    orig_cue = cue_.probe(cuename)
-    cue_.parse(orig_cue)
+    cue_.probe(cuename)
+    cue_.parse()
     cue_.type()
 
     cue_.modify()
