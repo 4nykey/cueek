@@ -10,16 +10,18 @@ from optparse import OptionParser
 from subprocess import *
 from mutagen import File
 
-DFLT_CFG="""# file naming scheme
-#   <%metadata%>[|<convert>]
-#
-# available metadata fields: albumartist, artist, album, tracknumber, title
-# case convertion: lower, upper, swapcase, capitalize, title
+DFLT_CFG="""# these below are available for filename generation and tagging:
+#   metadata fields: albumartist, artist, album, title, tracknumber
+#   translation modes: lower, upper, swapcase, capitalize, title
 
 [filenames]
-mult_files:     %tracknumber% - %title%|lower
-mult_files_va:  %tracknumber% - %artist% - %title%|lower
-single_file:    %albumartist% - %album%|lower
+mult_files:     %tracknumber% - %title%
+mult_files_va:  %tracknumber% - %artist% - %title%
+single_file:    %albumartist% - %album%
+translate:      lower
+
+[tags]
+translate:      lower
 
 # encoders and decoders
 # decoders must be able to write to stdout, encoders - read from stdin
@@ -74,10 +76,6 @@ class Argv:
         opt_parse.add_option("-d", "--delete-files",
             action="store_false", dest="nodelete", default=True,
             help="delete source files after encoding")
-        opt_parse.add_option("-Y", "--year",
-            help="set YEAR metadata field", metavar="YEAR")
-        opt_parse.add_option("-N", "--discnumber",
-            help="set DISCNUMBER metadata field", metavar="DISCNUMBER")
 
         opt_parse.set_usage('%prog [options] <in.cue>')
 
@@ -114,6 +112,7 @@ class Config:
         cfg_file = io_.tryfile()
         self.cfg_parse.readfp(cfg_file)
         self.section = ''
+        self.case_conv = ['capitalize', 'lower', 'swapcase', 'title', 'upper']
     def read(self, e, supress=0):
         result = ''
         try:
@@ -130,8 +129,8 @@ class Config:
         cmd = cmd[:pos] + fname + cmd[pos+1:]
         return cmd
     def scheme(self, t, e):
-        s = self.read(e)
-        spl = s.split('%')
+        self.section = 'filenames'
+        spl = self.read(e).split('%')
         sch = ''
         for s in spl:
             if s in ('artist', 'title'):
@@ -144,14 +143,9 @@ class Config:
                 sch += meta_.get('title')
             else:
                 sch += s
-        spl = sch.split('|')
-        if len(spl) == 2:
-            if spl[1] == 'capitalize': sch = spl[0].capitalize()
-            elif spl[1] == 'lower': sch = spl[0].lower()
-            elif spl[1] == 'swapcase': sch = spl[0].swapcase()
-            elif spl[1] == 'title': sch = spl[0].title()
-            elif spl[1] == 'upper': sch = spl[0].upper()
-            else: sch = spl[0]
+        if self.read('translate') in self.case_conv:
+            sch = 'u"' + sch + '".' + self.read('translate') + '()'
+            sch = eval(sch)
         return sch
 
 class Strings:
@@ -214,28 +208,30 @@ class Meta:
             result = self.get(entry, tn=tn)
         return result
     def tag(self, n = 0):
+        cfg_.section = 'tags'
         f = File(io_.fname.strip('\'"'))
         if hasattr(f, 'info'):
+            tags = []
+            # collect tags
             if cue_.is_va:
-                f['ALBUMARTIST'] = self.get('artist').lower()
-            f['ARTIST'] = self.add_missing('artist', n).lower()
-            f['ALBUM'] = self.get('title').lower()
+                tags.append(['ALBUMARTIST', self.get('artist')])
+            tags.append(['ARTIST', self.add_missing('artist', n)])
+            tags.append(['ALBUM', self.get('title')])
             if cue_.is_singlefile:
-                f['TITLE'] = self.add_missing('title', n).lower()
-                f['TRACKNUMBER'] = str(n)
-                if argv_.format == 'mpc':
-                    f['TRACK'] = str(n)
+                tags.append(['TITLE', self.add_missing('title', n)])
+                tags.append(['TRACKNUMBER', str(n)])
             else:
-                f['CUESHEET'] = ''.join(cue_.sheet)
-            if argv_.options.year:
-                f['DATE'] = argv_.options.year
-                if argv_.format == 'mpc':
-                    f['YEAR'] = argv_.options.year
-            if argv_.options.discnumber:
-                f['DISCNUMBER'] = argv_.options.discnumber
+                tags.append(['CUESHEET', ''.join(cue_.sheet)])
+            # convert case if requested and write to file
+            func = "x[1]"
+            if cfg_.read('translate') in cfg_.case_conv:
+                func += '.' + cfg_.read('translate') + '()'
+            values = [eval(func) for x in tags]
+            for x in xrange(len(tags)):
+                (tag, val) = (tags[x][0], values[x])
+                f[tag] = val
             f.save()
     def filename(self, t, single=0):
-        cfg_.section = 'filenames'
         if single:
             f = cfg_.scheme(t, 'single_file')
         else:
