@@ -403,7 +403,7 @@ class Cue:
     def __init__(self):
         (self.pregap, self.trackzero_present, self.is_compl, self.is_noncompl, 
             self.is_singlefile, self.is_va) = 6 * (0,)
-        (self.encoding, self.sheet) = (encoding, [])
+        (self.encoding, self.sheet, self.ref_file) = (encoding, [], '')
     def probe(self, fn):
         size = os.path.getsize(fn)
         io_.fname = fn
@@ -412,6 +412,7 @@ class Cue:
             _f = File(io_.fname)
             try:
                 self.sheet = _f['CUESHEET'][0].splitlines(1)
+                self.ref_file = io_.fname
             except (KeyError, TypeError):
                 str_.pollute('failed to probe this cuesheet', die=1)
         else:
@@ -458,6 +459,8 @@ class Cue:
             elif re.search('FILE', line, re.I):
                 ref_file = line.split('"')[1]
 
+                if self.ref_file:
+                    ref_file = self.ref_file
                 io_.fname = ref_file
                 aud_.fin = io_.wav_rd()[0]
                 params = aud_.get_params()
