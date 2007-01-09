@@ -180,7 +180,7 @@ class Strings:
         return idx_pos
     def linehas(self, n, s):
         result = 0
-        if re.search(n+'\s+\d+:\d+:\d+', s): result = 1
+        if re.search(n+'\s+\d+:\d+:\d+', s, re.I): result = 1
         return result
     def repl_time(self, n, s):
         return re.sub('\d+:\d+:\d+', self.getlength(n), s)
@@ -446,17 +446,17 @@ class Cue:
             tn = 'album'
             if not isinstance(line, unicode):
                 line = line.decode(self.encoding)
-            if line.find('PERFORMER') != -1:
+            if re.search('PERFORMER', line, re.I):
                 (metadata, line) = self.dblquotes(line)
                 if meta_.get('trck', 1): tn = trknum
                 meta_.put('artist', metadata, tn)
                 self.sheet.append(line)
-            elif line.find('TITLE') != -1:
+            elif re.search('TITLE', line, re.I):
                 (metadata, line) = self.dblquotes(line)
                 if meta_.get('trck', 1): tn = trknum
                 meta_.put('title', metadata, tn)
                 self.sheet.append(line)
-            elif line.find('REM') != -1:
+            elif re.search('REM', line, re.I):
                 if meta_.get('trck', 1): tn = trknum
                 metadata = []
                 if meta_.get('comment', tn):
@@ -464,7 +464,7 @@ class Cue:
                 metadata.append(line.split()[1:])
                 meta_.put('comment', metadata, tn)
                 self.sheet.append(line)
-            elif line.find('FILE') != -1:
+            elif re.search('FILE', line, re.I):
                 spl_lines = line.split('"')
                 ref_file = spl_lines[1]
 
@@ -492,7 +492,7 @@ class Cue:
                     meta_.put('apos', abs_pos, 0)
                 abs_pos = meta_.get('apos', trknum-1) + framenum
                 meta_.put('apos', abs_pos, trknum)
-            elif line.find('TRACK') != -1:
+            elif re.search('TRACK', line, re.I):
                 meta_.put('trck', 1, trknum)
                 self.sheet.append(line)
             elif str_.linehas('PREGAP', line):
@@ -550,7 +550,7 @@ class Cue:
         abs_pos = meta_.get('duration')
         for x in xrange(len(cue_.sheet)):
             line = cue_.sheet.pop(x)
-            if line.find('FILE') != -1:
+            if re.search('FILE', line, re.I):
                 if cue_.is_singlefile:
                     if meta_.get('idx1', trknum) and \
                     argv_.options.noncompliant and \
