@@ -125,9 +125,12 @@ class Config:
                 str_.pollute(errstr)
         return result
     def get_cmdline(self, action, fname):
-        cmd = cfg_.read(action).split()
-        pos = cmd.index('%f')
-        cmd = cmd[:pos] + fname + cmd[pos+1:]
+        cmd = self.read(action).split()
+        try:
+            pos = cmd.index('%f')
+            cmd = cmd[:pos] + fname + cmd[pos+1:]
+        except ValueError:
+            pass
         return cmd
     def scheme(self, t, e):
         self.section = 'filenames'
