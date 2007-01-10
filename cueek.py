@@ -349,9 +349,10 @@ class Audio:
             errstr = 'error while running child process: %s' % \
                 proc.stderr.read().strip().decode(encoding)
             str_.pollute(errstr, die=1)
-    def write(self, _fin, _fout, lgth=0):
-        if isinstance(_fin, list): # merging input files to 1 out file
-            io_.fname = _fout
+    def write(self, _if='', _of=''):
+        files, lgths = files_.list, files_.lengths
+        if _of: # merging to one file
+            io_.fname = _of
             (self.fout, child_enc) = io_.wav_wr()
             # when piping, write wav header with number of samples
             # equal to sum of lengths of input files
@@ -359,14 +360,14 @@ class Audio:
             start = 0
             if not cue_.trackzero_present:
                 start = 1
-            for x in xrange(start, len(_fin)):
-                io_.fname = _fin[x]
+            for x in xrange(start, len(files)):
+                io_.fname = files[x]
                 (self.fin, child_dec) = io_.wav_rd()
                 self.frnum = self.get_params()[3]
 
                 abs_pos = meta_.get('apos', x-1)
                 statstr = '%s >> %s @ %s\n' % \
-                    (_fin[x], _fout, str_.getlength(abs_pos))
+                    (files[x], _of, str_.getlength(abs_pos))
                 str_.pollute(statstr, override=1)
 
                 self.wr_chunks()
@@ -375,23 +376,23 @@ class Audio:
                 self.fin.close()
             self.fout.close()
             self.wait_for_child(child_enc)
-            io_.fname = _fout
+            io_.fname = _of
             meta_.tag()
-        elif isinstance(_fout, list): # splitting to multiple files
-            io_.fname = _fin
+        elif _if: # splitting to multiple files
+            io_.fname = _if
             (self.fin, child_dec) = io_.wav_rd()
             self.get_params()
-            for x in xrange(len(_fout)):
+            for x in xrange(len(files)):
                 if meta_.get('idx1', 1) and not argv_.options.notrackzero:
                     io_.trknum = x
                 else:
                     io_.trknum = x + 1
-                io_.fname = _fout[x]
+                io_.fname = files[x]
                 (self.fout, child_enc) = io_.wav_wr()
-                self.hdr_frnum = self.frnum = lgth[x]
+                self.hdr_frnum = self.frnum = lgths[x]
 
                 statstr = '%s > %s # %s\n' % \
-                    (_fin, _fout[x], str_.getlength(lgth[x]))
+                    (_if, files[x], str_.getlength(lgths[x]))
                 str_.pollute(statstr, override=1)
 
                 self.wr_chunks()
@@ -687,36 +688,34 @@ class Cue:
             print cue
             str_.pollute('- - - - - - - - 8< - - - - - - - -\n')
 class Files:
+    def __init__(self):
+        self.list, self.lengths = [], []
     def write(self):
         n = meta_.get('numoftracks')
         for argv_.format in argv_.formats:
             str_.pollute('\nWriting %s files...\n\n' % (argv_.format))
-            files=[]
-            lengths=[]
             if cue_.is_singlefile:
                 for x in xrange(n):
                     if meta_.get('lgth', x):
                         out_file = meta_.filename(x)
-                        files.append(out_file)
-                        lengths.append(meta_.get('lgth', x))
-                aud_.write(meta_.get('name', 1), files, lengths)
-                self.apply_rg(files)
+                        self.list.append(out_file)
+                        self.lengths.append(meta_.get('lgth', x))
+                aud_.write(_if=meta_.get('name', 1))
+                self.apply_rg()
             else:
                 for x in xrange(n):
                     if meta_.get('name', x):
-                        files.append(meta_.get('name', x))
+                        self.list.append(meta_.get('name', x))
                 out_file = meta_.filename(x, single=1)
-                aud_.write(files, out_file)
-                self.apply_rg([out_file])
-    def apply_rg(self, files):
+                aud_.write(_of=out_file)
+                self.list = [out_file]
+                self.apply_rg()
+    def apply_rg(self):
             if not argv_.options.norg and not argv_.format == 'wav':
                 cfg_.section = argv_.format
                 str_.pollute('\nApplying replay gain...\n\n')
-                f = []
-                for file in files: # get list of encoded files
-                    f.append(file)
                 if cfg_.read('rg', 1):
-                    s = cfg_.get_cmdline('rg', f)
+                    s = cfg_.get_cmdline('rg', self.list)
                     if call(s):
                         str_.pollute('WARNING: failed to apply replay gain',
                         override=1)
