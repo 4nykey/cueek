@@ -455,7 +455,7 @@ class Cue:
                 if meta_.get('comment', tn):
                     metadata = meta_.get('comment', tn)
                 tag, val = line.split()[1].upper(), ' '.join(line.split()[2:])
-                metadata.append([tag, val])
+                metadata.append([str(tag), val])
                 meta_.put('comment', metadata, tn)
             elif re.search('FILE', line, re.I):
                 ref_file = line.split('"')[1]
