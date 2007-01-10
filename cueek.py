@@ -224,13 +224,13 @@ class Meta:
                 tags.append(['ALBUMARTIST', self.get('artist')])
             tags.append(['ARTIST', self.add_missing('artist', n)])
             tags.append(['ALBUM', self.get('title')])
-            for x in ('album', n):
-                if meta_.get('comment', x):
-                    for y in meta_.get('comment', x):
-                        tags.append([y[0].upper(), ' '.join(y[1:])])
+            if meta_.get('comment'):
+                for x in meta_.get('comment'): tags.append(x)
             if cue_.is_singlefile:
                 tags.append(['TITLE', self.add_missing('title', n)])
                 tags.append(['TRACKNUMBER', str(n)])
+                if meta_.get('comment', n):
+                    for x in meta_.get('comment', n): tags.append(x)
             else:
                 tags.append(['CUESHEET', ''.join(cue_.sheet)])
             # convert case if requested and write to file
@@ -454,7 +454,8 @@ class Cue:
                 metadata = []
                 if meta_.get('comment', tn):
                     metadata = meta_.get('comment', tn)
-                metadata.append(line.split()[1:])
+                tag, val = line.split()[1].upper(), ' '.join(line.split()[2:])
+                metadata.append([tag, val])
                 meta_.put('comment', metadata, tn)
             elif re.search('FILE', line, re.I):
                 ref_file = line.split('"')[1]
