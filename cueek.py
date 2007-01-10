@@ -145,7 +145,7 @@ class Config:
             else:
                 sch += s
         if self.read('translate') in self.case_conv:
-            sch = 'u"' + sch + '".' + self.read('translate') + '()'
+            sch = repr(sch) + '.' + self.read('translate') + '()'
             sch = eval(sch)
         return sch
     def str2list(self, s):
@@ -234,11 +234,11 @@ class Meta:
             else:
                 tags.append(['CUESHEET', ''.join(cue_.sheet)])
             # convert case if requested and write to file
-            for tag in tags:
-                (t, v) = tag
-                if t not in self.tags_dontranslate and self.translate:
-                    v = eval(repr(v) + self.translate)
-                if t not in self.tags_omit: f[t] = v
+            for (key, val) in tags:
+                if key not in self.tags_omit:
+                    if self.translate and key not in self.tags_dontranslate:
+                        val = eval(repr(val) + self.translate)
+                    f[key] = val
             f.save()
     def filename(self, t, single=0):
         if single:
@@ -320,12 +320,11 @@ class Audio:
         return self.fin.getparams()
     def gen_hdr(self):
         params = meta_.get('wavparams')
-        datalength = self.hdr_frnum * params[0] * params[1]
-        hdr = 'RIFF' + struct.pack('<l4s4slhhllhh4s', 36 + datalength,\
-            'WAVE', 'fmt ', 16, wave.WAVE_FORMAT_PCM, params[0], params[2],\
-            params[0] * params[2] * params[1], params[0] * params[1],\
-            params[1] * 8, 'data')
-        hdr += struct.pack('<l', datalength)
+        length = self.hdr_frnum * params[0] * params[1]
+        hdr = 'RIFF' + struct.pack('<l4s4slhhllhh4sl', 36 + length,
+            'WAVE', 'fmt ', 16, wave.WAVE_FORMAT_PCM, params[0], params[2],
+            params[0] * params[2] * params[1], params[0] * params[1],
+            params[1] * 8, 'data', length)
         return hdr
     def wr_chunks(self):
         step = smpl_freq * 10 # 10s chunks
@@ -454,8 +453,8 @@ class Cue:
                 metadata = []
                 if meta_.get('comment', tn):
                     metadata = meta_.get('comment', tn)
-                tag, val = line.split()[1].upper(), ' '.join(line.split()[2:])
-                metadata.append([str(tag), val])
+                key, val = line.split()[1].upper(), ' '.join(line.split()[2:])
+                metadata.append([str(key), val])
                 meta_.put('comment', metadata, tn)
             elif re.search('FILE', line, re.I):
                 ref_file = line.split('"')[1]
