@@ -46,6 +46,9 @@ rg:     wvgain -aq %f
 
 [ape]
 decode: mac %f - -d
+
+[play]
+encode: aplay -
 """
 
 class Argv:
@@ -225,7 +228,8 @@ class Meta:
         return result
     def tag(self, n = 0):
         cfg_.section = 'tags'
-        f = File(io_.fname)
+        f = None
+        if os.path.isfile(io_.fname): f = File(io_.fname)
         if hasattr(f, 'info'):
             tags = []
             # collect tags
