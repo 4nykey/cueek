@@ -122,7 +122,7 @@ class Config:
         self.cfg_parse = ConfigParser.ConfigParser()
         io_.fname = os.path.expanduser('~/.cueekrc')
         if not os.path.isfile(io_.fname): # write config file on first run
-            cfg_file = io_.tryfile(mode='w')
+            cfg_file = io_.tryfile('w')
             cfg_file.write(DFLT_CFG)
             cfg_file.close()
         cfg_file = io_.tryfile()
@@ -305,7 +305,7 @@ class IO:
         cfg_.section = argv_.format
         tag_str = ''
         if argv_.format == 'wav':
-            w = self.tryfile(mode='wb')
+            w = self.tryfile('wb')
             p = None
         elif cfg_.read('encode', 1):
             s = cfg_.get_cmdline('encode', [self.fname])
@@ -388,7 +388,7 @@ class Audio:
                 io_.fname = files_.list[x]
                 if not io_.fname:
                     io_.fname = os.devnull
-                    (self.fout, child_enc) = (io_.tryfile(mode='wb'), None)
+                    (self.fout, child_enc) = (io_.tryfile('wb'), None)
                 else:
                     (self.fout, child_enc) = io_.wav_wr()
                 self.hdr_frnum = self.frnum = files_.lgth[x]
@@ -412,7 +412,7 @@ class Cue:
     def probe(self, fn):
         size = os.path.getsize(fn)
         io_.fname = fn
-        f = io_.tryfile(mode='Ur')
+        f = io_.tryfile('Ur')
         if size >= long(16384):
             _f = File(io_.fname)
             try:
@@ -682,7 +682,7 @@ class Cue:
     def save(self):
         cue = ''.join(self.sheet).encode(encoding)
         if argv_.options.output:
-            io_.fname = argv_.options.output; result = io_.tryfile(mode='w')
+            io_.fname = argv_.options.output; result = io_.tryfile('w')
             result.write(cue)
             result.close()
         else:
