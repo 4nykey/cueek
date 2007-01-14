@@ -5,7 +5,6 @@ import locale
 import re
 import wave
 import struct
-import operator
 import ConfigParser
 from optparse import OptionParser
 from subprocess import *
@@ -360,14 +359,14 @@ class Audio:
             io_.fname = _of
             (self.fout, child_enc) = io_.wav_wr()
             # wave header with number of samples equal to sum of input files
-            self.hdr_frnum = reduce(operator.add, files_.lgth)
+            self.hdr_frnum = reduce(lambda x, y: x+y, files_.lgth)
             for x in xrange(len(files_.list)):
                 io_.fname = files_.list[x]
                 (self.fin, child_dec) = io_.wav_rd()
                 self.frnum = files_.lgth[x]
 
                 abs_pos = 0
-                if x: abs_pos = reduce(operator.add, files_.lgth[:x])
+                if x: abs_pos = reduce(lambda x, y: x+y, files_.lgth[:x])
                 statstr = '%s >> %s @ %s\n' % \
                     (io_.fname, _of, str_.getlength(abs_pos))
                 str_.pollute(statstr, override=1)
