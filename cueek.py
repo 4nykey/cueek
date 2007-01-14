@@ -159,7 +159,7 @@ class Config:
 
 class Strings:
     def __init__(self):
-        self.msfstr = '\d{1,2}:\d{1,2}:\d{1,2}'
+        self.msfstr = '\d{1,2}:\d\d:\d\d'
     def pollute(self, s, override=0, die=0):
         if not argv_.options.quiet or override or die:
             if isinstance(s, unicode): s = s.encode(encoding)
@@ -168,15 +168,15 @@ class Strings:
             sys.stderr.flush()
             if die: sys.exit(1)
     def getlength(self, n):
-        ms, fr = divmod(n, smpl_freq)
+        ms, fr = divmod(n, aud_.smpl_freq)
         m, s = divmod(ms, 60)
-        f = fr / (smpl_freq / 75)
-        l = ':'.join([str(x).zfill(2) for x in m,s,f])
-        return l
+        f = fr / (aud_.smpl_freq / 75)
+        s = ':'.join([str(x).zfill(2) for x in m,s,f])
+        return s
     def getidx(self, s):
         mm, ss, ff = [int(x[-2:]) for x in s.strip().split(':')]
-        idx_pos = ((mm * 60 + ss) * smpl_freq + ff * (smpl_freq / 75))
-        return idx_pos
+        idx = ((mm * 60 + ss) * aud_.smpl_freq + ff * (aud_.smpl_freq / 75))
+        return idx
     def linehas(self, n, s):
         result = 0
         if re.search(n+'\s+'+self.msfstr, s, re.I): result = 1
@@ -310,17 +310,17 @@ class Audio:
         (self.frnum, self.hdr_frnum) = 2 * (0,)
         (self.fin, self.fout) = 2 * (None,)
     def get_params(self):
-        return self.fin.getparams()
+        self.params = self.fin.getparams()
+        self.smpl_freq = self.params[2]
     def gen_hdr(self):
-        params = meta_.get('wavparams')
-        length = self.hdr_frnum * params[0] * params[1]
-        hdr = 'RIFF' + struct.pack('<l4s4slhhllhh4sl', 36 + length,
-            'WAVE', 'fmt ', 16, wave.WAVE_FORMAT_PCM, params[0], params[2],
-            params[0] * params[2] * params[1], params[0] * params[1],
-            params[1] * 8, 'data', length)
+        par = self.params
+        len = self.hdr_frnum * par[0] * par[1]
+        hdr = 'RIFF' + struct.pack('<l4s4slhhllhh4sl', 36 + len, 'WAVE', 'fmt ',
+            16, wave.WAVE_FORMAT_PCM, par[0], par[2], par[0] * par[2] * par[1],
+            par[0] * par[1], par[1] * 8, 'data', len)
         return hdr
     def wr_chunks(self):
-        step = smpl_freq * 10 # 10s chunks
+        step = self.smpl_freq * 10 # 10s chunks
         if self.hdr_frnum:
             hdr = self.gen_hdr()
             self.fout.write(hdr)
@@ -352,7 +352,7 @@ class Audio:
             for x in xrange(start, len(files)):
                 io_.fname = files[x]
                 (self.fin, child_dec) = io_.wav_rd()
-                self.frnum = self.get_params()[3]
+                self.frnum = meta_.get('wpar', x)[3]
 
                 abs_pos = meta_.get('apos', x-1)
                 statstr = '%s >> %s @ %s\n' % \
@@ -370,7 +370,6 @@ class Audio:
         elif _if: # splitting to multiple files
             io_.fname = _if
             (self.fin, child_dec) = io_.wav_rd()
-            self.get_params()
             for x in xrange(len(files)):
                 if meta_.get('idx1', 1) and not argv_.options.notrackzero: t = x
                 else: t = x + 1
@@ -454,13 +453,11 @@ class Cue:
                     ref_file = self.ref_file
                 io_.fname = ref_file
                 aud_.fin = io_.wav_rd()[0]
-                params = aud_.get_params()
-                meta_.put('wavparams', params)
-                global smpl_freq
-                smpl_freq = params[2]
+                aud_.get_params()
+                meta_.put('wpar', aud_.params, trknum)
                 aud_.fin.close()
 
-                framenum = params[3]
+                framenum = aud_.params[3]
                 if not meta_.get('trck', 1):
                     for x in 0, 1:
                         meta_.put('name', ref_file, x)
