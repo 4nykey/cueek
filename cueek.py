@@ -688,12 +688,11 @@ class Cue:
             print cue
             str_.pollute('- - - - - - - - 8< - - - - - - - -\n')
 class Files:
-    def __init__(self):
-        self.list, self.lengths = [], []
     def write(self):
         n = meta_.get('numoftracks')
         for argv_.format in argv_.formats:
             str_.pollute('\nWriting %s files...\n\n' % (argv_.format))
+            self.list, self.lengths = [], []
             if cue_.is_singlefile:
                 for x in xrange(n):
                     if meta_.get('lgth', x):
