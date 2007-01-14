@@ -244,7 +244,8 @@ class Meta:
                 if meta_.get('comment', n):
                     for x in meta_.get('comment', n): tags.append(x)
             else:
-                tags.append(['CUESHEET', ''.join(cue_.sheet)])
+                if not argv_.options.tracks:
+                    tags.append(['CUESHEET', ''.join(cue_.sheet)])
             # convert case if requested and write to file
             for (key, val) in tags:
                 if key not in self.tags_omit:
