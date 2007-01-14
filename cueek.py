@@ -7,7 +7,7 @@ import wave
 import struct
 import ConfigParser
 from optparse import OptionParser
-from subprocess import *
+from subprocess import Popen
 from mutagen import File
 
 DFLT_CFG="""
@@ -719,15 +719,17 @@ class Files:
                 self.list = [out_file]
                 self.apply_rg()
     def apply_rg(self):
-            if not argv_.options.norg and not argv_.format == 'wav':
-                cfg_.section = argv_.format
-                str_.pollute('\nApplying replay gain...\n\n')
-                while self.list.count(''): self.list.remove('')
-                if cfg_.read('rg', 1):
-                    s = cfg_.get_cmdline('rg', self.list)
-                    if call(s):
-                        str_.pollute('WARNING: failed to apply replay gain',
-                        override=1)
+        if not argv_.options.norg and not argv_.format == 'wav':
+            cfg_.section = argv_.format
+            str_.pollute('\nApplying replay gain...\n\n')
+            while self.list.count(''): self.list.remove('')
+            if cfg_.read('rg', 1):
+                statstr = 'RG* %s\n' % (', '.join(self.list))
+                str_.pollute(statstr, override=1)
+
+                s = cfg_.get_cmdline('rg', self.list)
+                p = Popen(s, stderr=PIPE)
+                aud_.wait_for_child(p)
     def rm(self):
         str_.pollute('\nDeleting files...\n\n')
         n = meta_.get('numoftracks')
