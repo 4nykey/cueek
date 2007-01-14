@@ -81,12 +81,15 @@ class Argv:
 
         opt_parse.set_usage('%prog [options] <in.cue>')
 
-        opt_parse.set_description("This script converts a cuesheet to another "
-            "type. If input cuesheet is 'single-file' (i.e CD image), it will "
-            "be converted ('splitted') to 'multiple-files' one. "
-            "Referenced audio file can be splitted accordingly. "
-            "Vice versa, 'multiple-files' cue will be converted ('merged') to "
-            "'single-file' one, while optionally merging referenced files.")
+        opt_parse.set_description(
+            "This script converts a cuesheet to another type. If input cue is "
+            "of 'single-file' type (i.e CD image), it will be converted "
+            "('splitted') to a 'multiple-files' one. Referenced audio file can "
+            "be splitted accordingly. "
+            "Vice versa, a 'multiple-files' cue will be converted ('merged') to"
+            " a 'single-file' one, while optionaly merging referenced files. "
+            "Configuration is read from ~/.cueekrc file, it will be created on "
+            "the first run and is needed for running this script.")
 
         (self.options, self.args) = opt_parse.parse_args()
 
@@ -134,13 +137,12 @@ class Config:
         return cmd
     def scheme(self, t, e):
         self.section = 'filenames'
-        spl = self.read(e).split('%')
         sch = ''
-        for s in spl:
+        for s in self.read(e).split('%'):
             if s in ('artist', 'title'):
                 sch += meta_.add_missing(s, t)
             elif s == 'tracknumber':
-                sch += str_.leadzero(t)
+                sch += str(t).zfill(2)
             elif s == 'albumartist':
                 sch += meta_.get('artist')
             elif s == 'album':
@@ -157,7 +159,7 @@ class Config:
 
 class Strings:
     def __init__(self):
-        self.pad = 2
+        self.msfstr = '\d{1,2}:\d{1,2}:\d{1,2}'
     def pollute(self, s, override=0, die=0):
         if not argv_.options.quiet or override or die:
             if isinstance(s, unicode): s = s.encode(encoding)
@@ -165,30 +167,22 @@ class Strings:
             sys.stderr.write(s)
             sys.stderr.flush()
             if die: sys.exit(1)
-    def leadzero(self, n):
-        nn = str(n).zfill(self.pad)
-        return nn
     def getlength(self, n):
-        fr = divmod(n, smpl_freq)
-        ms = divmod(fr[0], 60)
-        m = ms[0]
-        s = ms[1]
-        f = fr[1] / (smpl_freq / 75)
-        lngth = self.leadzero(m) + ':' + self.leadzero(s) + ':' + \
-            self.leadzero(f)
-        return lngth
+        ms, fr = divmod(n, smpl_freq)
+        m, s = divmod(ms, 60)
+        f = fr / (smpl_freq / 75)
+        l = ':'.join([str(x).zfill(2) for x in m,s,f])
+        return l
     def getidx(self, s):
-        idx = s.split(':')
-        mm = idx[0]; mm = mm[-2:]; ss = idx[1]; ff = idx[2]
-        idx_pos = ((int(mm) * 60 + int(ss)) * smpl_freq + int(ff) *
-            (smpl_freq / 75))
+        mm, ss, ff = [int(x[-2:]) for x in s.strip().split(':')]
+        idx_pos = ((mm * 60 + ss) * smpl_freq + ff * (smpl_freq / 75))
         return idx_pos
     def linehas(self, n, s):
         result = 0
-        if re.search(n+'\s+\d+:\d+:\d+', s, re.I): result = 1
+        if re.search(n+'\s+'+self.msfstr, s, re.I): result = 1
         return result
     def repl_time(self, n, s):
-        return re.sub('\d+:\d+:\d+', self.getlength(n), s)
+        return re.sub(self.msfstr, self.getlength(n), s)
 
 class Meta:
     def __init__(self):
@@ -199,11 +193,11 @@ class Meta:
         if cfg_.read('translate') in cfg_.case_conv:
             self.translate = '.' + cfg_.read('translate') + '()'
     def put(self, entry, val, tn='album'):
-        if isinstance(tn, int): tn = str_.leadzero(tn)
+        if isinstance(tn, int): tn = str(tn).zfill(2)
         entry = tn + entry
         self.data[entry] = val
     def get(self, entry, tn='album'):
-        if isinstance(tn, int): tn = str_.leadzero(tn)
+        if isinstance(tn, int): tn = str(tn).zfill(2)
         entry = tn + entry
         try:
             val = self.data[entry]
@@ -212,14 +206,14 @@ class Meta:
         return val
     def add_missing(self, entry, tn):
         result = 'untitled'
-        if not self.get(entry, tn=tn):
+        if not self.get(entry, tn):
             if entry == 'artist': result = self.get(entry)
         else:
             result = self.get(entry, tn)
         return result
     def tag(self, n = 0):
         cfg_.section = 'tags'
-        f = File(io_.fname.strip('\'"'))
+        f = File(io_.fname)
         if hasattr(f, 'info'):
             tags = []
             # collect tags
@@ -243,20 +237,19 @@ class Meta:
                         val = eval(repr(val) + self.translate)
                     f[key] = val
             f.save()
-    def filename(self, t, single=0):
-        if single:
-            f = cfg_.scheme(t, 'single_file')
+    def filename(self, t):
+        if not cue_.is_singlefile:
+            s = 'single_file'
+        elif cue_.is_va:
+            s = 'mult_files_va'
         else:
-            if cue_.is_va:
-                f = cfg_.scheme(t, 'mult_files_va')
-            else:
-                f = cfg_.scheme(t, 'mult_files')
-        f = re.sub('[*":/\\\?]', '_', f) + '.' + argv_.format
+            s = 'mult_files'
+        f = re.sub('[*":/\\\?]', '_', cfg_.scheme(t, s)) + '.' + argv_.format
         return f
 
 class IO:
     def __init__(self):
-        (self.trknum, self.fname) = (0, '')
+        self.fname = ''
     def tryfile(self, mode='r'):
         try:
             f = open(self.fname, mode)
@@ -300,22 +293,19 @@ class IO:
         cfg_.section = argv_.format
         tag_str = ''
         if argv_.format == 'wav':
-            f = self.tryfile(mode='wb')
-            w = (f, None)
+            w = self.tryfile(mode='wb')
+            p = None
         elif cfg_.read('encode', 1):
             s = cfg_.get_cmdline('encode', [self.fname])
             p = Popen(s, stdin=PIPE, stderr=PIPE)
-            p.stderr.close()
-            w = (p.stdin, p)
+            w = p.stdin
         else:
-            errstr = 'don\'t how to encode "%s" files, ' % (argv_.format)
-            errstr += 'please set appropriate encoder in config file'
+            errstr = 'don\'t know how to encode "%s" files, ' % (argv_.format)
+            errstr += 'please set appropriate encoder in the config file'
             str_.pollute(errstr, die=1)
-        return w
+        return (w, p)
 
 class Audio:
-    #smpl_freq = 44100
-    #frm_length = smpl_freq / 75
     def __init__(self):
         (self.frnum, self.hdr_frnum) = 2 * (0,)
         (self.fin, self.fout) = 2 * (None,)
@@ -354,8 +344,7 @@ class Audio:
         if _of: # merging to one file
             io_.fname = _of
             (self.fout, child_enc) = io_.wav_wr()
-            # when piping, write wav header with number of samples
-            # equal to sum of lengths of input files
+            # wave header (number of samples = sum of lengths of input files)
             self.hdr_frnum = meta_.get('duration')
             start = 0
             if not cue_.trackzero_present:
@@ -383,10 +372,8 @@ class Audio:
             (self.fin, child_dec) = io_.wav_rd()
             self.get_params()
             for x in xrange(len(files)):
-                if meta_.get('idx1', 1) and not argv_.options.notrackzero:
-                    io_.trknum = x
-                else:
-                    io_.trknum = x + 1
+                if meta_.get('idx1', 1) and not argv_.options.notrackzero: t = x
+                else: t = x + 1
                 io_.fname = files[x]
                 (self.fout, child_enc) = io_.wav_wr()
                 self.hdr_frnum = self.frnum = lgths[x]
@@ -398,7 +385,7 @@ class Audio:
                 self.wr_chunks()
                 self.fout.close()
                 self.wait_for_child(child_enc)
-                meta_.tag(x+1)
+                meta_.tag(t)
             self.wait_for_child(child_dec)
             self.fin.close()
 
@@ -499,6 +486,8 @@ class Cue:
                 idx_pos = str_.getidx(line)
                 meta_.put('idx1', idx_pos, trknum)
                 trknum += 1
+        if not meta_.get('lgth', 1):
+            str_.pollute('cannot get the length of referenced file', die=1)
         if not self.trackzero_present:
             del meta_.data['00lgth']
         meta_.put('numoftracks', trknum)
@@ -549,7 +538,7 @@ class Cue:
                         else:
                             wav_file = meta_.filename(trknum)
                     else:
-                        wav_file = meta_.filename(trknum, single=1)
+                        wav_file = meta_.filename(trknum)
                     wav_file = '"' + wav_file + '"'
                     line = re.sub('".+"', wav_file, line)
                     cue.append(line)
@@ -663,7 +652,7 @@ class Cue:
                 real_length = meta_.get('lgth', trknum)
                 length = real_length - gap
                 trk_str = 'Track %s (%s)\n' % \
-                    (str_.leadzero(trknum), str_.getlength(real_length))
+                    (str(trknum).zfill(2), str_.getlength(real_length))
                 lgth_str = ' content: %s\n' % (str_.getlength(length))
             if self.pregap > 0 and trknum == 1:
                 statstr += 'Pregap   (%s)\n' % (str_.getlength(self.pregap))
@@ -705,7 +694,7 @@ class Files:
                 for x in xrange(n):
                     if meta_.get('name', x):
                         self.list.append(meta_.get('name', x))
-                out_file = meta_.filename(x, single=1)
+                out_file = meta_.filename(x)
                 aud_.write(_of=out_file)
                 self.list = [out_file]
                 self.apply_rg()
