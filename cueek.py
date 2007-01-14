@@ -5,6 +5,7 @@ import locale
 import re
 import wave
 import struct
+import operator
 import ConfigParser
 from optparse import OptionParser
 from subprocess import *
@@ -72,6 +73,9 @@ class Argv:
         opt_parse.add_option("-e", "--encode",
             help="encode audio files to specified FORMAT(s) (use comma as "
             "separator)", metavar="FORMAT")
+        opt_parse.add_option("-t", "--tracks",
+            help="write only tracks with specified NUMBER(s) (use comma as "
+            "separator, dash for setting ranges)", metavar="NUMBER")
         opt_parse.add_option("-r", "--replay-gain",
             action="store_false", dest="norg", default=True,
             help="apply replay gain to encoded file(s)")
@@ -104,6 +108,14 @@ class Argv:
         else:
             self.formats=['wav']
         self.format = self.formats[0]
+
+        self.tracks = []
+        if self.options.tracks:
+            for x in self.options.tracks.split(','):
+                t = [int(y) for y in x.split('-')]
+                for z in xrange(t[0], t[-1]+1):
+                    self.tracks.append(z)
+        self.tracks.sort()
 
 class Config:
     def __init__(self):
@@ -340,23 +352,20 @@ class Audio:
                 proc.stderr.read().strip().decode(encoding)
             str_.pollute(errstr, die=1)
     def write(self, _if='', _of=''):
-        files, lgths = files_.list, files_.lengths
         if _of: # merging to one file
             io_.fname = _of
             (self.fout, child_enc) = io_.wav_wr()
-            # wave header (number of samples = sum of lengths of input files)
-            self.hdr_frnum = meta_.get('duration')
-            start = 0
-            if not cue_.trackzero_present:
-                start = 1
-            for x in xrange(start, len(files)):
-                io_.fname = files[x]
+            # wave header with number of samples equal to sum of input files
+            self.hdr_frnum = reduce(operator.add, files_.lgth)
+            for x in xrange(len(files_.list)):
+                io_.fname = files_.list[x]
                 (self.fin, child_dec) = io_.wav_rd()
-                self.frnum = meta_.get('wpar', x)[3]
+                self.frnum = files_.lgth[x]
 
-                abs_pos = meta_.get('apos', x-1)
+                abs_pos = 0
+                if x: abs_pos = reduce(operator.add, files_.lgth[:x])
                 statstr = '%s >> %s @ %s\n' % \
-                    (files[x], _of, str_.getlength(abs_pos))
+                    (io_.fname, _of, str_.getlength(abs_pos))
                 str_.pollute(statstr, override=1)
 
                 self.wr_chunks()
@@ -370,15 +379,22 @@ class Audio:
         elif _if: # splitting to multiple files
             io_.fname = _if
             (self.fin, child_dec) = io_.wav_rd()
-            for x in xrange(len(files)):
+            for x in xrange(len(files_.list)):
+                if x >= argv_.tracks[-1]:
+                    child_dec = None
+                    break
                 if meta_.get('idx1', 1) and not argv_.options.notrackzero: t = x
                 else: t = x + 1
-                io_.fname = files[x]
-                (self.fout, child_enc) = io_.wav_wr()
-                self.hdr_frnum = self.frnum = lgths[x]
+                io_.fname = files_.list[x]
+                if not io_.fname:
+                    io_.fname = os.devnull
+                    (self.fout, child_enc) = (io_.tryfile(mode='wb'), None)
+                else:
+                    (self.fout, child_enc) = io_.wav_wr()
+                self.hdr_frnum = self.frnum = files_.lgth[x]
 
                 statstr = '%s > %s # %s\n' % \
-                    (_if, files[x], str_.getlength(lgths[x]))
+                    (_if, io_.fname, str_.getlength(self.frnum))
                 str_.pollute(statstr, override=1)
 
                 self.wr_chunks()
@@ -676,22 +692,25 @@ class Cue:
 class Files:
     def write(self):
         n = meta_.get('numoftracks')
+        if not argv_.tracks: argv_.tracks = range(n+1)
         for argv_.format in argv_.formats:
             str_.pollute('\nWriting %s files...\n\n' % (argv_.format))
-            self.list, self.lengths = [], []
+            self.list, self.lgth = [], []
             if cue_.is_singlefile:
                 for x in xrange(n):
                     if meta_.get('lgth', x):
-                        out_file = meta_.filename(x)
+                        out_file = ''
+                        if x in argv_.tracks: out_file = meta_.filename(x)
                         self.list.append(out_file)
-                        self.lengths.append(meta_.get('lgth', x))
+                        self.lgth.append(meta_.get('lgth', x))
                 aud_.write(_if=meta_.get('name', 1))
                 self.apply_rg()
             else:
                 for x in xrange(n):
-                    if meta_.get('name', x):
+                    if meta_.get('lgth', x) and x in argv_.tracks:
                         self.list.append(meta_.get('name', x))
-                out_file = meta_.filename(x)
+                        self.lgth.append(meta_.get('lgth', x))
+                out_file = meta_.filename(1)
                 aud_.write(_of=out_file)
                 self.list = [out_file]
                 self.apply_rg()
@@ -699,6 +718,7 @@ class Files:
             if not argv_.options.norg and not argv_.format == 'wav':
                 cfg_.section = argv_.format
                 str_.pollute('\nApplying replay gain...\n\n')
+                while self.list.count(''): self.list.remove('')
                 if cfg_.read('rg', 1):
                     s = cfg_.get_cmdline('rg', self.list)
                     if call(s):
