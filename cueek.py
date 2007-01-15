@@ -3,11 +3,11 @@ import sys
 import os
 import locale
 import re
-import wave
 import struct
-import ConfigParser
+from ConfigParser import ConfigParser
 from optparse import OptionParser
-from subprocess import Popen
+from subprocess import Popen, PIPE
+from wave import Wave_read, WAVE_FORMAT_PCM
 from mutagen import File
 
 DFLT_CFG="""
@@ -24,7 +24,7 @@ translate:      lower
 [tags]
 fields_skip:    replaygain_album_gain, replaygain_album_peak, replaygain_track_gain, replaygain_track_peak
 fields_notran:  discid, cuesheet
-#translate:      lower
+translate:      title
 
 # encoders and decoders
 # decoders must be able to write to stdout, encoders - read from stdin
@@ -121,7 +121,7 @@ class Argv:
 
 class Config:
     def __init__(self):
-        self.cfg_parse = ConfigParser.ConfigParser()
+        self.cfg_parse = ConfigParser()
         io_.fname = os.path.expanduser('~/.cueekrc')
         if not os.path.isfile(io_.fname): # write config file on first run
             cfg_file = io_.tryfile('w')
@@ -135,8 +135,7 @@ class Config:
         result = ''
         try:
             result = self.cfg_parse.get(self.section, e)
-        except (ConfigParser.NoSectionError, ConfigParser.NoOptionError), \
-        (strerror):
+        except (NoSectionError, NoOptionError), (strerror):
             if not supress:
                 errstr = 'ERROR: config file: %s\n' % strerror
                 str_.pollute(errstr)
@@ -279,7 +278,7 @@ class IO:
         ext = fn.split('.')[-1].lower()
         cfg_.section = ext
         if ext == 'wav':
-            r = fn
+            r = self.tryfile('rb')
             p = None
         elif cfg_.read('decode', 1):
             s = cfg_.get_cmdline('decode', [fn])
@@ -290,15 +289,7 @@ class IO:
             errstr += 'please set decoder in config file'
             str_.pollute(errstr, die=1)
         try:
-            r = wave.open(r, 'rb')
-        except IOError, (errno, strerror):
-            errstr = 'cannot open "%s" for reading: %s' % \
-                (fn, strerror.decode(encoding))
-            str_.pollute(errstr, die=1)
-        except wave.Error, (strerror):
-            errstr = 'cannot open wave file "%s": %s' % \
-                (fn, str(strerror).decode(encoding))
-            str_.pollute(errstr, die=1)
+            r = Wave_read(r)
         except EOFError:
             errstr = 'cannot decode %s: %s' % \
                 (fn, e.read().strip().decode(encoding))
@@ -332,7 +323,7 @@ class Audio:
         par = self.params
         len = self.hdr_frnum * par[0] * par[1]
         hdr = 'RIFF' + struct.pack('<l4s4slhhllhh4sl', 36 + len, 'WAVE', 'fmt ',
-            16, wave.WAVE_FORMAT_PCM, par[0], par[2], par[0] * par[2] * par[1],
+            16, WAVE_FORMAT_PCM, par[0], par[2], par[0] * par[2] * par[1],
             par[0] * par[1], par[1] * 8, 'data', len)
         return hdr
     def wr_chunks(self):
