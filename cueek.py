@@ -229,27 +229,30 @@ class Meta:
         f = None
         if os.path.isfile(io_.fname): f = File(io_.fname)
         if hasattr(f, 'info'):
-            tags = []
+            tags = {}
             # collect tags
             if cue_.is_va:
-                tags.append(['ALBUMARTIST', self.get('artist')])
-            tags.append(['ARTIST', self.add_missing('artist', n)])
-            tags.append(['ALBUM', self.get('title')])
+                tags['ALBUMARTIST'] = self.get('artist')
+            tags['ARTIST'] =  self.add_missing('artist', n)
+            tags['ALBUM'] =  self.get('title')
             if meta_.get('comment'):
-                for x in meta_.get('comment'): tags.append(x)
+                for x in meta_.get('comment'): tags[x[0]] = x[1]
             if cue_.is_singlefile:
-                tags.append(['TITLE', self.add_missing('title', n)])
-                tags.append(['TRACKNUMBER', str(n)])
+                tags['TITLE'] =  self.add_missing('title', n)
+                tags['TRACKNUMBER'] =  str(n)
                 if meta_.get('comment', n):
-                    for x in meta_.get('comment', n): tags.append(x)
+                    for x in meta_.get('comment', n): tags[x[0]] = x[1]
             else:
                 if not argv_.options.tracks:
-                    tags.append(['CUESHEET', ''.join(cue_.sheet)])
+                    tags['CUESHEET'] =  ''.join(cue_.sheet)
+            if argv_.format == 'mpc':
+                if tags.has_key('DATE'): tags['YEAR'] = tags['DATE']
             # convert case if requested and write to file
-            for (key, val) in tags:
+            for (key, val) in tags.iteritems():
                 if key not in self.tags_omit:
                     if self.translate and key not in self.tags_dontranslate:
                         val = eval(repr(val) + self.translate)
+                    if argv_.format == 'mpc': key = key.title()
                     f[key] = val
             f.save()
     def filename(self, t):
