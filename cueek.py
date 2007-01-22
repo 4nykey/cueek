@@ -1,9 +1,9 @@
 #!/usr/bin/python
 import sys
 import os
-import locale
 import re
 import struct
+from locale import getdefaultlocale
 from ConfigParser import ConfigParser
 from optparse import OptionParser
 from subprocess import Popen, PIPE
@@ -212,10 +212,8 @@ class Meta:
     def get(self, entry, tn='album'):
         if isinstance(tn, int): tn = str(tn).zfill(2)
         entry = tn + entry
-        try:
-            val = self.data[entry]
-        except KeyError:
-            val = 0
+        val = self.data.get(entry)
+        if not val: val = 0
         return val
     def add_missing(self, entry, tn):
         result = 'untitled'
@@ -246,6 +244,7 @@ class Meta:
                 if not argv_.options.tracks:
                     tags['CUESHEET'] =  ''.join(cue_.sheet)
             if argv_.format == 'mpc':
+                tags['TRACK'] = tags['TRACKNUMBER']
                 if tags.has_key('DATE'): tags['YEAR'] = tags['DATE']
             # convert case if requested and write to file
             for (key, val) in tags.iteritems():
@@ -271,9 +270,9 @@ class IO:
     def tryfile(self, mode='r'):
         try:
             f = open(self.fname, mode)
-        except IOError, (errno, strerror):
-            errstr = 'cannot open "%s": %s' % \
-                (self.fname, strerror.decode(encoding))
+        except IOError, err:
+            errstr = 'cannot open "%s": %s\n' % \
+                (err.filename, err.strerror.decode(encoding))
             str_.pollute(errstr, die=1)
         return f
     def wav_rd(self):
@@ -406,7 +405,7 @@ class Cue:
     def __init__(self):
         (self.pregap, self.trackzero_present, self.is_compl, self.is_noncompl, 
             self.is_singlefile, self.is_va) = 6 * (0,)
-        (self.encoding, self.sheet, self.ref_file) = (encoding, [], '')
+        (self.charmap, self.sheet, self.ref_file) = (encoding, [], '')
     def probe(self, fn):
         size = os.path.getsize(fn)
         io_.fname = fn
@@ -420,16 +419,16 @@ class Cue:
                 str_.pollute('failed to probe this cuesheet', die=1)
         else:
             if argv_.options.charmap:
-                self.encoding = argv_.options.charmap
+                self.charmap = argv_.options.charmap
             else:
                 try:
                     import chardet
                     _f = io_.tryfile()
-                    self.encoding = chardet.detect(_f.read())['encoding']
+                    self.charmap = chardet.detect(_f.read())['encoding']
                     _f.close()
                 except ImportError:
                     pass
-            self.sheet = [line.decode(self.encoding) for line in f]
+            self.sheet = [line.decode(self.charmap) for line in f]
         f.close()
     def dblquotes(self, s):
         """This is to allow double quotes inside PERFORMER and TITLE fields,
@@ -457,7 +456,8 @@ class Cue:
                 metadata = []
                 if meta_.get('comment', tn):
                     metadata = meta_.get('comment', tn)
-                key, val = line.split()[1].upper(), ' '.join(line.split()[2:])
+                spl = line.split()
+                key, val = spl[1].upper(), ' '.join(spl[2:]).strip('"')
                 metadata.append([str(key), val])
                 meta_.put('comment', metadata, tn)
             elif re.search('FILE', line, re.I):
@@ -674,19 +674,20 @@ class Cue:
                     statstr += gap_str + lgth_str
                 else:
                     statstr += lgth_str + gap_str
-        statstr += '\nLength   (%s)\n' % \
+        statstr += 19 * '-' + '\n         (%s)\n' % \
             (str_.getlength(meta_.get('duration')))
         str_.pollute(statstr)
     def save(self):
         cue = ''.join(self.sheet).encode(encoding)
+        cutstr = 10 * '- ' + '8< ' + 10 * '- ' + '\n'
         if argv_.options.output:
             io_.fname = argv_.options.output; result = io_.tryfile('w')
             result.write(cue)
             result.close()
         else:
-            str_.pollute('\n- - - - - - - - 8< - - - - - - - -\n')
+            str_.pollute('\nCuesheet:\n\n' + cutstr)
             print cue
-            str_.pollute('- - - - - - - - 8< - - - - - - - -\n')
+            str_.pollute(cutstr)
 class Files:
     def write(self):
         n = meta_.get('numoftracks')
@@ -718,11 +719,11 @@ class Files:
             str_.pollute('\nApplying replay gain...\n\n')
             while self.list.count(''): self.list.remove('')
             if cfg_.read('rg', 1):
-                statstr = 'RG* %s\n' % (', '.join(self.list))
+                statstr = 'RG* (%s)\n' % (', '.join(self.list))
                 str_.pollute(statstr, override=1)
 
                 s = cfg_.get_cmdline('rg', self.list)
-                p = Popen(s, stderr=PIPE)
+                p = Popen(s, stdout=PIPE, stderr=PIPE)
                 aud_.wait_for_child(p)
     def rm(self):
         str_.pollute('\nDeleting files...\n\n')
@@ -735,8 +736,7 @@ class Files:
 
 
 if __name__ == '__main__':
-    locale.setlocale(locale.LC_ALL, '')
-    encoding = locale.getlocale()[1]
+    encoding = getdefaultlocale()[1]
 
     argv_ = Argv()
     str_ = Strings()
