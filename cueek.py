@@ -4,7 +4,7 @@ import os
 import re
 import struct
 from locale import getdefaultlocale
-from ConfigParser import ConfigParser
+from ConfigParser import ConfigParser, NoSectionError, NoOptionError
 from optparse import OptionParser
 from subprocess import Popen, PIPE
 from wave import Wave_read, WAVE_FORMAT_PCM
@@ -135,10 +135,9 @@ class Config:
         result = ''
         try:
             result = self.cfg_parse.get(self.section, e)
-        except (NoSectionError, NoOptionError), (strerror):
+        except (NoSectionError, NoOptionError), err:
             if not supress:
-                errstr = 'ERROR: config file: %s\n' % strerror
-                str_.pollute(errstr)
+                str_.pollute('"%s": Config file: %s\n' % (io_.fname, err), die=1)
         return result
     def get_cmdline(self, action, fname):
         cmd = self.read(action).split()
@@ -162,13 +161,15 @@ class Config:
                 sch += meta_.get('title')
             else:
                 sch += s
-        if self.read('translate') in self.case_conv:
+        if self.read('translate', 1) in self.case_conv:
             sch = repr(sch) + '.' + self.read('translate') + '()'
             sch = eval(sch)
         return sch
     def str2list(self, s):
-        s = [x.strip() for x in self.read(s).upper().split(',')]
-        return s
+        list = []
+        if self.read(s, 1):
+            list = [x.strip() for x in self.read(s).upper().split(',')]
+        return list
 
 class Strings:
     def __init__(self):
@@ -203,7 +204,8 @@ class Meta:
         cfg_.section = 'tags'
         self.tags_omit = cfg_.str2list('fields_skip')
         self.tags_dontranslate = cfg_.str2list('fields_notran')
-        if cfg_.read('translate') in cfg_.case_conv:
+        self.translate = ''
+        if cfg_.read('translate', 1) in cfg_.case_conv:
             self.translate = '.' + cfg_.read('translate') + '()'
     def put(self, entry, val, tn='album'):
         if isinstance(tn, int): tn = str(tn).zfill(2)
@@ -271,29 +273,24 @@ class IO:
         try:
             f = open(self.fname, mode)
         except IOError, err:
-            errstr = 'cannot open "%s": %s\n' % \
-                (err.filename, err.strerror.decode(encoding))
+            errstr = 'Failed to open "%s": %s\n' % (err.filename, err.strerror)
             str_.pollute(errstr, die=1)
         return f
     def wav_rd(self):
         fn = self.fname
         ext = fn.split('.')[-1].lower()
-        cfg_.section = ext
+        cfg_.section = ext.encode(encoding)
         if ext == 'wav':
             r = self.tryfile('rb')
             p = None
-        elif cfg_.read('decode', 1):
+        elif cfg_.read('decode'):
             s = cfg_.get_cmdline('decode', [fn])
             p = Popen(s, stdout=PIPE, stderr=PIPE)
             (r, e) = (p.stdout, p.stderr)
-        else:
-            errstr = 'don\'t know how to decode "%s", ' % (fn)
-            errstr += 'please set decoder in config file'
-            str_.pollute(errstr, die=1)
         try:
             r = Wave_read(r)
         except EOFError:
-            errstr = 'cannot decode %s: %s' % \
+            errstr = 'Failed to decode "%s": %s' % \
                 (fn, e.read().strip().decode(encoding))
             e.close
             str_.pollute(errstr, die=1)
@@ -304,14 +301,10 @@ class IO:
         if argv_.format == 'wav':
             w = self.tryfile('wb')
             p = None
-        elif cfg_.read('encode', 1):
+        elif cfg_.read('encode'):
             s = cfg_.get_cmdline('encode', [self.fname])
             p = Popen(s, stdin=PIPE, stderr=PIPE)
             w = p.stdin
-        else:
-            errstr = 'don\'t know how to encode "%s" files, ' % (argv_.format)
-            errstr += 'please set appropriate encoder in the config file'
-            str_.pollute(errstr, die=1)
         return (w, p)
 
 class Audio:
@@ -345,7 +338,7 @@ class Audio:
         except AttributeError:
             pass
         if retcode:
-            errstr = 'error while running child process: %s' % \
+            errstr = 'Error in child process: %s' % \
                 proc.stderr.read().strip().decode(encoding)
             str_.pollute(errstr, die=1)
     def write(self, _if='', _of=''):
@@ -407,16 +400,16 @@ class Cue:
             self.is_singlefile, self.is_va) = 6 * (0,)
         (self.charmap, self.sheet, self.ref_file) = (encoding, [], '')
     def probe(self, fn):
-        size = os.path.getsize(fn)
         io_.fname = fn
         f = io_.tryfile('Ur')
+        size = os.path.getsize(fn)
         if size >= long(16384):
             _f = File(io_.fname)
             try:
                 self.sheet = _f['CUESHEET'][0].splitlines(1)
                 self.ref_file = io_.fname
             except (KeyError, TypeError):
-                str_.pollute('failed to probe this cuesheet', die=1)
+                str_.pollute('Failed to probe the cuesheet', die=1)
         else:
             if argv_.options.charmap:
                 self.charmap = argv_.options.charmap
@@ -498,7 +491,7 @@ class Cue:
                 meta_.put('idx1', idx_pos, trknum)
                 trknum += 1
         if not meta_.get('lgth', 1):
-            str_.pollute('cannot get the length of referenced file', die=1)
+            str_.pollute('Failed to get the length of referenced file', die=1)
         if not self.trackzero_present:
             del meta_.data['00lgth']
         meta_.put('numoftracks', trknum)
@@ -523,7 +516,7 @@ class Cue:
                 if not gaps_present:
                     cue_type = 'gapless'
                 else:
-                    errstr = 'failed to recognise cuesheet type'
+                    errstr = 'Failed to parse the cuesheet'
                     str_.pollute(errstr, die=1)
         self.type = cue_type
         for x in xrange(meta_.get('numoftracks')):
@@ -718,7 +711,7 @@ class Files:
             cfg_.section = argv_.format
             str_.pollute('\nApplying replay gain...\n\n')
             while self.list.count(''): self.list.remove('')
-            if cfg_.read('rg', 1):
+            if cfg_.read('rg'):
                 statstr = 'RG* (%s)\n' % (', '.join(self.list))
                 str_.pollute(statstr, override=1)
 
