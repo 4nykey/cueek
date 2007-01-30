@@ -268,7 +268,7 @@ class Meta:
 
 class IO:
     def __init__(self):
-        self.fname = ''
+        (self.fname, self.rdcmd, self.wrcmd) = 3 * ('', )
     def tryfile(self, mode='r'):
         try:
             f = open(self.fname, mode)
@@ -284,13 +284,13 @@ class IO:
             r = self.tryfile('rb')
             p = None
         elif cfg_.read('decode'):
-            s = cfg_.get_cmdline('decode', [fn])
-            p = Popen(s, stdout=PIPE, stderr=PIPE)
+            self.rdcmd = cfg_.get_cmdline('decode', [fn])
+            p = Popen(self.rdcmd, stdout=PIPE, stderr=PIPE)
             (r, e) = (p.stdout, p.stderr)
         try:
             r = Wave_read(r)
         except EOFError:
-            errstr = 'Failed to decode "%s": %s' % \
+            errstr = 'Failed to decode "%s": %s\n' % \
                 (fn, e.read().strip().decode(encoding))
             e.close
             str_.pollute(errstr, die=1)
@@ -302,8 +302,8 @@ class IO:
             w = self.tryfile('wb')
             p = None
         elif cfg_.read('encode'):
-            s = cfg_.get_cmdline('encode', [self.fname])
-            p = Popen(s, stdin=PIPE, stderr=PIPE)
+            self.wrcmd = cfg_.get_cmdline('encode', [self.fname])
+            p = Popen(self.wrcmd, stdin=PIPE, stderr=PIPE)
             w = p.stdin
         return (w, p)
 
@@ -331,7 +331,7 @@ class Audio:
             self.fout.write(frames)
         frames = self.fin.readframes(self.frnum%step) # leftovers
         self.fout.write(frames)
-    def wait_for_child(self, proc):
+    def wait_for_child(self, proc, cmd):
         retcode = 0
         try:
             retcode = proc.wait()
@@ -340,8 +340,8 @@ class Audio:
         except AttributeError:
             pass
         if retcode:
-            errstr = 'Error in child process: %s' % \
-                proc.stderr.read().strip().decode(encoding)
+            errstr = 'Error while running "%s": %s\n' % \
+                (cmd, proc.stderr.read().strip().decode(encoding))
             str_.pollute(errstr, die=1)
     def write(self, _if='', _of=''):
         if _of: # merging to one file
@@ -362,10 +362,10 @@ class Audio:
 
                 self.wr_chunks()
                 if self.hdr_frnum: self.hdr_frnum = 0 # write header only once
-                self.wait_for_child(child_dec)
+                self.wait_for_child(child_dec, io_.rdcmd)
                 self.fin.close()
             self.fout.close()
-            self.wait_for_child(child_enc)
+            self.wait_for_child(child_enc, io_.wrcmd)
             io_.fname = _of
             meta_.tag()
         elif _if: # splitting to multiple files
@@ -391,9 +391,9 @@ class Audio:
 
                 self.wr_chunks()
                 self.fout.close()
-                self.wait_for_child(child_enc)
+                self.wait_for_child(child_enc, io_.wrcmd)
                 meta_.tag(t)
-            self.wait_for_child(child_dec)
+            self.wait_for_child(child_dec, io_.rdcmd)
             self.fin.close()
 
 class Cue:
@@ -718,9 +718,9 @@ class Files:
                 statstr = 'RG* (%s)\n' % (', '.join(self.list))
                 str_.pollute(statstr, override=1)
 
-                s = cfg_.get_cmdline('rg', self.list)
-                p = Popen(s, stdout=PIPE, stderr=PIPE)
-                aud_.wait_for_child(p)
+                cmd = cfg_.get_cmdline('rg', self.list)
+                p = Popen(cmd, stdout=PIPE, stderr=PIPE)
+                aud_.wait_for_child(p, cmd)
     def rm(self):
         str_.pollute('\nDeleting files...\n\n')
         n = meta_.get('numoftracks')
