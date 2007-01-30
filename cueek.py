@@ -403,7 +403,7 @@ class Cue:
         (self.charmap, self.sheet, self.ref_file) = (encoding, [], '')
     def probe(self, fn):
         io_.fname = fn
-        f = io_.tryfile('Ur')
+        f = io_.tryfile()
         size = os.path.getsize(fn)
         if size >= long(16384):
             _f = File(io_.fname)
@@ -531,7 +531,7 @@ class Cue:
         (trknum, gap, cue, wav_file) = (1, 0, [], '')
         abs_pos = meta_.get('duration')
         for x in xrange(len(self.sheet)):
-            line = self.sheet[x]
+            line = self.sheet[x].rstrip() + os.linesep
             if re.search('PERFORMER|TITLE', line, re.I):
                 line = self.dblquotes(line)[1]
                 cue.append(line)
