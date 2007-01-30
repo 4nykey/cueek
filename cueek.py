@@ -427,11 +427,10 @@ class Cue:
         """This is to allow double quotes inside PERFORMER and TITLE fields,
         so they could be used for tagging, while replacing them with single
         quotes in output"""
-        p1 = s.partition('"')
-        p2 = p1[2].rpartition('"')
-        m = p2[0]
-        s = p1[0] + '"' + p2[0].replace('"', "'") + '"' + p2[2]
-        return (m, s)
+        list=re.split('([^"]*")(.*)("[^"]*)', s)
+        m = list[2]
+        list[2] = m.replace('"', "''")
+        return (m, ''.join(list))
     def parse(self):
         trknum = 1
         for line in self.sheet:
