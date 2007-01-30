@@ -435,17 +435,17 @@ class Cue:
         return (m, ''.join(list))
     def parse(self):
         trknum = 1
-        for line in self.sheet:
+        for line in [s.lstrip() for s in self.sheet]:
             tn = 'album'
-            if re.search('PERFORMER', line, re.I):
+            if re.search('^PERFORMER\s+"', line, re.I):
                 metadata = self.dblquotes(line)[0]
                 if meta_.get('trck', 1): tn = trknum
                 meta_.put('artist', metadata, tn)
-            elif re.search('TITLE', line, re.I):
+            elif re.search('^TITLE\s+"', line, re.I):
                 metadata = self.dblquotes(line)[0]
                 if meta_.get('trck', 1): tn = trknum
                 meta_.put('title', metadata, tn)
-            elif re.search('REM', line, re.I):
+            elif re.search('^REM\s+', line, re.I):
                 if meta_.get('trck', 1): tn = trknum
                 metadata = []
                 if meta_.get('comment', tn):
@@ -454,7 +454,7 @@ class Cue:
                 key, val = spl[1].upper(), ' '.join(spl[2:]).strip('"')
                 metadata.append([str(key), val])
                 meta_.put('comment', metadata, tn)
-            elif re.search('FILE', line, re.I):
+            elif re.search('^FILE\s+"', line, re.I):
                 ref_file = line.split('"')[1]
 
                 if self.ref_file:
@@ -482,14 +482,14 @@ class Cue:
                     meta_.put('apos', abs_pos, 0)
                 abs_pos = meta_.get('apos', trknum-1) + framenum
                 meta_.put('apos', abs_pos, trknum)
-            elif re.search('TRACK', line, re.I):
+            elif re.search('^TRACK\s+', line, re.I):
                 meta_.put('trck', 1, trknum)
-            elif str_.linehas('PREGAP', line):
+            elif str_.linehas('^PREGAP\s+', line):
                 self.pregap = str_.getidx(line)
-            elif str_.linehas('INDEX\s+00', line):
+            elif str_.linehas('^INDEX\s+00', line):
                 idx_pos = str_.getidx(line)
                 meta_.put('idx0', idx_pos, trknum)
-            elif str_.linehas('INDEX\s+01', line):
+            elif str_.linehas('^INDEX\s+01', line):
                 idx_pos = str_.getidx(line)
                 meta_.put('idx1', idx_pos, trknum)
                 trknum += 1
@@ -532,10 +532,11 @@ class Cue:
         abs_pos = meta_.get('duration')
         for x in xrange(len(self.sheet)):
             line = self.sheet[x].rstrip() + os.linesep
-            if re.search('PERFORMER|TITLE', line, re.I):
+            lstr = line.lstrip()
+            if re.search('^PERFORMER|TITLE', lstr, re.I):
                 line = self.dblquotes(line)[1]
                 cue.append(line)
-            elif re.search('FILE', line, re.I):
+            elif re.search('^FILE\s+', lstr, re.I):
                 if not wav_file or self.is_singlefile:
                     if self.is_singlefile:
                         if meta_.get('idx1', trknum) and \
@@ -549,7 +550,7 @@ class Cue:
                     wav_file = '"' + wav_file + '"'
                     line = re.sub('".+"', wav_file, line)
                     cue.append(line)
-            elif str_.linehas('INDEX\s+00', line):
+            elif str_.linehas('^INDEX\s+00', lstr):
                 if self.is_noncompl:
                     gap = meta_.get('lgth', trknum-1) - \
                         meta_.get('idx0', trknum)
@@ -576,7 +577,7 @@ class Cue:
                             meta_.filename(trknum) + '" WAVE\n'
                 meta_.put('gap', gap, trknum)
                 cue.append(line)
-            elif str_.linehas('INDEX\s+01', line):
+            elif str_.linehas('^INDEX\s+01', lstr):
                 if self.is_singlefile:
                     idx01 = 0
                     if trknum == 1:
