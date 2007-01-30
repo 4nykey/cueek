@@ -335,6 +335,8 @@ class Audio:
         retcode = 0
         try:
             retcode = proc.wait()
+            proc.stdin.close()
+            proc.stdout.close()
         except AttributeError:
             pass
         if retcode:
@@ -458,10 +460,12 @@ class Cue:
                 if self.ref_file:
                     ref_file = self.ref_file
                 io_.fname = ref_file
-                aud_.fin = io_.wav_rd()[0]
+                (aud_.fin, proc) = io_.wav_rd()
                 aud_.get_params()
                 meta_.put('wpar', aud_.params, trknum)
                 aud_.fin.close()
+                try: proc.stdout.close()
+                except AttributeError: pass
 
                 framenum = aud_.params[3]
                 if not meta_.get('trck', 1):
