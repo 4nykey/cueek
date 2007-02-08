@@ -2,13 +2,7 @@
 import sys
 import os
 import re
-import struct
-from locale import getdefaultlocale
-from ConfigParser import ConfigParser, NoSectionError, NoOptionError
-from optparse import OptionParser
 from subprocess import Popen, PIPE
-from wave import Wave_read, WAVE_FORMAT_PCM
-from mutagen import File
 
 DFLT_CFG="""
 # these below are available for filename generation and tagging:
@@ -52,6 +46,7 @@ encode: aplay -
 
 class Argv:
     def __init__(self):
+        from optparse import OptionParser
         opt_parse = OptionParser()
 
         opt_parse.add_option("-v", "--verbose",
@@ -121,7 +116,9 @@ class Argv:
 
 class Config:
     def __init__(self):
+        from ConfigParser import ConfigParser, NoSectionError, NoOptionError
         self.cfg_parse = ConfigParser()
+        (self.nosect, self.noopt) = (NoSectionError, NoOptionError)
         io_.fname = os.path.expanduser('~/.cueekrc')
         if not os.path.isfile(io_.fname): # write config file on first run
             cfg_file = io_.tryfile('w')
@@ -135,7 +132,7 @@ class Config:
         result = ''
         try:
             result = self.cfg_parse.get(self.section, e)
-        except (NoSectionError, NoOptionError), err:
+        except (self.nosect, self.noopt), err:
             if not supress:
                 str_.pollute('"%s": Config file: %s\n' % (io_.fname, err), die=1)
         return result
@@ -200,6 +197,8 @@ class Strings:
 
 class Meta:
     def __init__(self):
+        from mutagen import File
+        self.mutagen = File
         self.data = {'albumartist': 'unknown', 'albumtitle': 'untitled'}
         cfg_.section = 'tags'
         self.tags_omit = cfg_.str2list('fields_skip')
@@ -227,7 +226,7 @@ class Meta:
     def tag(self, n = 0):
         cfg_.section = 'tags'
         f = None
-        if os.path.isfile(io_.fname): f = File(io_.fname)
+        if os.path.isfile(io_.fname): f = self.mutagen(io_.fname)
         if hasattr(f, 'info'):
             tags = {}
             # collect tags
@@ -268,6 +267,8 @@ class Meta:
 
 class IO:
     def __init__(self):
+        from wave import Wave_read
+        self.wavrd = Wave_read
         (self.fname, self.rdcmd, self.wrcmd) = 3 * ('', )
     def tryfile(self, mode='r'):
         try:
@@ -288,7 +289,7 @@ class IO:
             p = Popen(self.rdcmd, stdout=PIPE, stderr=PIPE)
             (r, e) = (p.stdout, p.stderr)
         try:
-            r = Wave_read(r)
+            r = self.wavrd(r)
         except EOFError:
             errstr = 'Failed to decode "%s": %s\n' % \
                 (fn, e.read().strip().decode(encoding))
@@ -309,6 +310,10 @@ class IO:
 
 class Audio:
     def __init__(self):
+        from struct import pack
+        self.pack = pack
+        from wave import WAVE_FORMAT_PCM
+        self.fmtpcm = WAVE_FORMAT_PCM
         (self.frnum, self.hdr_frnum) = 2 * (0,)
         (self.fin, self.fout) = 2 * (None,)
     def get_params(self):
@@ -317,8 +322,8 @@ class Audio:
     def gen_hdr(self):
         par = self.params
         len = self.hdr_frnum * par[0] * par[1]
-        hdr = 'RIFF' + struct.pack('<l4s4slhhllhh4sl', 36 + len, 'WAVE', 'fmt ',
-            16, WAVE_FORMAT_PCM, par[0], par[2], par[0] * par[2] * par[1],
+        hdr = 'RIFF' + self.pack('<l4s4slhhllhh4sl', 36 + len, 'WAVE', 'fmt ',
+            16, self.fmtpcm, par[0], par[2], par[0] * par[2] * par[1],
             par[0] * par[1], par[1] * 8, 'data', len)
         return hdr
     def wr_chunks(self):
@@ -406,7 +411,7 @@ class Cue:
         f = io_.tryfile()
         size = os.path.getsize(fn)
         if size >= long(16384):
-            _f = File(io_.fname)
+            _f = meta_.mutagen(io_.fname)
             try:
                 self.sheet = _f['CUESHEET'][0].splitlines(1)
                 self.ref_file = io_.fname
@@ -733,6 +738,7 @@ class Files:
 
 
 if __name__ == '__main__':
+    from locale import getdefaultlocale
     encoding = getdefaultlocale()[1]
 
     argv_ = Argv()
