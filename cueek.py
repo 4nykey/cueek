@@ -195,8 +195,8 @@ class Strings:
 
 class Meta:
     def __init__(self):
-        from mutagen import File
-        self.mutagen = File
+        from mutagen import File, musepack
+        (self.mutagen, self.mpc) = (File, musepack.Musepack)
         self.data = {'albumartist': 'unknown', 'albumtitle': 'untitled'}
         cfg_.section = 'tags'
         self.tags_omit = cfg_.str2list('fields_skip')
@@ -223,10 +223,11 @@ class Meta:
         return result
     def tag(self, n = 0):
         cfg_.section = 'tags'
-        f = None
+        (f, ismpc) = 2 * (None,)
         if os.path.isfile(io_.fname): f = self.mutagen(io_.fname)
         if hasattr(f, 'info'):
             tags = {}
+            if isinstance(f, self.mpc): ismpc = 1
             # collect tags
             if cue_.is_va:
                 tags['ALBUMARTIST'] = self.get('artist')
@@ -242,7 +243,7 @@ class Meta:
             else:
                 if not argv_.options.tracks:
                     tags['CUESHEET'] =  ''.join(cue_.sheet)
-            if argv_.format == 'mpc':
+            if ismpc:
                 tags['TRACK'] = tags['TRACKNUMBER']
                 if tags.has_key('DATE'): tags['YEAR'] = tags['DATE']
             # convert case if requested and write to file
@@ -250,7 +251,7 @@ class Meta:
                 if key not in self.tags_omit:
                     if self.translate and key not in self.tags_dontranslate:
                         val = eval(repr(val) + self.translate)
-                    if argv_.format == 'mpc': key = key.title()
+                    if ismpc: key = key.title()
                     f[key] = val
             f.save()
     def filename(self, t):
