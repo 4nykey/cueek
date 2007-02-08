@@ -195,8 +195,14 @@ class Strings:
 
 class Meta:
     def __init__(self):
-        from mutagen import File, musepack
-        (self.mutagen, self.mpc) = (File, musepack.Musepack)
+        from mutagen import File, musepack, mp3, id3
+        (self.mutagen, self.mpc, self.mp3, self.id3) = (File,
+            musepack.Musepack, mp3.MP3, id3)
+        self.id3tr = {'ARTIST': 'TPE1', 'ALBUM': 'TALB', 'TITLE': 'TIT2',
+            'TRACKNUMBER': 'TRCK', 'DATE': 'TDRC', 'DISCNUMBER': 'TPOS',
+            'GENRE': 'TCON', 'COMMENT': 'COMM'}
+        self.id3fr = []
+        for (name, frame) in self.id3.Frames.items(): self.id3fr.append(name)
         self.data = {'albumartist': 'unknown', 'albumtitle': 'untitled'}
         cfg_.section = 'tags'
         self.tags_omit = cfg_.str2list('fields_skip')
@@ -223,11 +229,12 @@ class Meta:
         return result
     def tag(self, n = 0):
         cfg_.section = 'tags'
-        (f, ismpc) = 2 * (None,)
+        (f, ismpc, ismp3) = 3 * (None,)
         if os.path.isfile(io_.fname): f = self.mutagen(io_.fname)
         if hasattr(f, 'info'):
             tags = {}
             if isinstance(f, self.mpc): ismpc = 1
+            elif isinstance(f, self.mp3): ismp3 = 1
             # collect tags
             if cue_.is_va:
                 tags['ALBUMARTIST'] = self.get('artist')
@@ -246,14 +253,31 @@ class Meta:
             if ismpc:
                 tags['TRACK'] = tags['TRACKNUMBER']
                 if tags.has_key('DATE'): tags['YEAR'] = tags['DATE']
+            if ismp3:
+                fn = f.filename
+                try: f = self.id3.ID3(fn)
+                except self.id3.ID3NoHeaderError: f = self.id3.ID3()
             # convert case if requested and write to file
             for (key, val) in tags.iteritems():
                 if key not in self.tags_omit:
                     if self.translate and key not in self.tags_dontranslate:
                         val = eval(repr(val) + self.translate)
-                    if ismpc: key = key.title()
-                    f[key] = val
-            f.save()
+                    if ismp3: # taken from mid3v2
+                        if self.id3tr.has_key(key): key = self.id3tr[key]
+                        if key in self.id3fr:
+                            if key == 'COMM':
+                                fr = self.id3.COMM(encoding=3, text=val,
+                                    lang='eng', desc='')
+                            else:
+                                fr = self.id3.Frames[key](encoding=3, text=val)
+                        else:
+                            fr = self.id3.TXXX(encoding=3, text=val, desc=key)
+                        f.add(fr)
+                    else:
+                        if ismpc: key = key.title()
+                        f[key] = val
+            if ismp3: f.save(fn)
+            else: f.save()
     def filename(self, t):
         if not cue_.is_singlefile:
             s = 'single_file'
@@ -314,7 +338,7 @@ class Audio:
     def get_params(self):
         self.params = self.fin.getparams()
         self.smpl_freq = self.params[2]
-    def gen_hdr(self):
+    def gen_hdr(self): # taken from `wave' module
         par = self.params
         len = self.hdr_frnum * par[0] * par[1]
         hdr = 'RIFF' + self.pack('<l4s4slhhllhh4sl', 36 + len, 'WAVE', 'fmt ',
