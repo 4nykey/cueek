@@ -42,6 +42,7 @@ decode: mac %f - -d
 [play]
 encode: aplay -
 """
+exit_str = '\nFinished succesfully\n'
 
 class Argv:
     def __init__(self):
@@ -133,7 +134,7 @@ class Config:
             result = self.cfg_parse.get(self.section, e)
         except (self.nosect, self.noopt), err:
             if not supress:
-                str_.pollute('"%s": Config file: %s\n' % (io_.fname, err), die=1)
+                exit('Config file: "%s": %s\n' % (io_.fname, err), 1)
         return result
     def get_cmdline(self, action, fname):
         cmd = self.read(action).split()
@@ -170,13 +171,11 @@ class Config:
 class Strings:
     def __init__(self):
         self.msfstr = '\d{1,2}:\d\d:\d\d'
-    def pollute(self, s, override=0, die=0):
-        if not argv_.options.quiet or override or die:
+    def pollute(self, s, override=0):
+        if not argv_.options.quiet or override:
             if isinstance(s, unicode): s = s.encode(encoding)
-            if die: s = 'ERROR: ' + s
             sys.stderr.write(s)
             sys.stderr.flush()
-            if die: sys.exit(1)
     def getlength(self, n):
         ms, fr = divmod(n, aud_.smpl_freq)
         m, s = divmod(ms, 60)
@@ -274,7 +273,7 @@ class IO:
             f = open(self.fname, mode)
         except IOError, err:
             errstr = 'Failed to open "%s": %s\n' % (err.filename, err.strerror)
-            str_.pollute(errstr, die=1)
+            exit(errstr, 1)
         return f
     def wav_rd(self):
         fn = self.fname
@@ -292,7 +291,7 @@ class IO:
             errstr = 'Failed to decode "%s": %s\n' % \
                 (fn, e.read().strip().decode(encoding))
             e.close
-            str_.pollute(errstr, die=1)
+            exit(errstr, 1)
         return r
     def wav_wr(self):
         cfg_.section = argv_.format
@@ -348,7 +347,7 @@ class Audio:
                 if x: abs_pos = reduce(lambda x, y: x+y, files_.lgth[:x])
                 statstr = '%s >> %s @ %s\n' % \
                     (io_.fname, _of, str_.getlength(abs_pos))
-                str_.pollute(statstr, override=1)
+                str_.pollute(statstr, 1)
 
                 self.wr_chunks()
                 if self.hdr_frnum: self.hdr_frnum = 0 # write header only once
@@ -363,8 +362,8 @@ class Audio:
             self.fin = io_.wav_rd()
             for x in xrange(len(files_.list)):
                 if x >= argv_.tracks[-1]:
-                    child_dec = None
-                    break
+                    self.fin.close()
+                    exit(exit_str)
                 if meta_.get('idx1', 1) and not argv_.options.notrackzero: t = x
                 else: t = x + 1
                 io_.fname = files_.list[x]
@@ -377,14 +376,14 @@ class Audio:
 
                 statstr = '%s > %s # %s\n' % \
                     (_if, io_.fname, str_.getlength(self.frnum))
-                str_.pollute(statstr, override=1)
+                str_.pollute(statstr, 1)
 
                 self.wr_chunks()
                 self.fout.close()
                 subp_.wait_for_child('wr')
                 meta_.tag(t)
             self.fin.close()
-#           subp_.wait_for_child()
+            subp_.wait_for_child()
 
 class Cue:
     def __init__(self):
@@ -401,7 +400,7 @@ class Cue:
                 self.sheet = _f['CUESHEET'][0].splitlines(1)
                 self.ref_file = io_.fname
             except (KeyError, TypeError):
-                str_.pollute('Failed to probe the cuesheet', die=1)
+                exit('Failed to probe the cuesheet', 1)
         else:
             if argv_.options.charmap:
                 self.charmap = argv_.options.charmap
@@ -484,7 +483,7 @@ class Cue:
                 meta_.put('idx1', idx_pos, trknum)
                 trknum += 1
         if not meta_.get('lgth', 1):
-            str_.pollute('Failed to get the length of referenced file', die=1)
+            exit('Failed to get the length of referenced file', 1)
         if not self.trackzero_present:
             del meta_.data['00lgth']
         meta_.put('numoftracks', trknum)
@@ -510,7 +509,7 @@ class Cue:
                     cue_type = 'gapless'
                 else:
                     errstr = 'Failed to parse the cuesheet'
-                    str_.pollute(errstr, die=1)
+                    exit(errstr, 1)
         self.type = cue_type
         for x in xrange(meta_.get('numoftracks')):
             if meta_.get('artist', x) and not \
@@ -707,7 +706,7 @@ class Files:
             while self.list.count(''): self.list.remove('')
             if cfg_.read('rg'):
                 statstr = 'RG* (%s)\n' % (', '.join(self.list))
-                str_.pollute(statstr, override=1)
+                str_.pollute(statstr, 1)
 
                 io_.rdcmd = cfg_.get_cmdline('rg', self.list)
                 subp_.exec_child()
@@ -718,7 +717,7 @@ class Files:
         for x in xrange(1, n):
             if meta_.get('name', x):
                 f = meta_.get('name', x)
-                str_.pollute('<<< %s\n' % f, override=1)
+                str_.pollute('<<< %s\n' % f, 1)
                 os.remove(f)
 
 class SubProc:
@@ -730,7 +729,7 @@ class SubProc:
     def bailout(self, str):
         s = 'While running "%s": %s\n' % \
             (' '.join(self.cmd), str.decode(encoding))
-        str_.pollute(s, die=1)
+        exit(s, 1)
     def exec_child(self, mode='rd'):
         if mode == 'rd': (pipe, self.cmd) = ('out', io_.rdcmd)
         else: (pipe, self.cmd) = ('in', io_.wrcmd)
@@ -755,6 +754,14 @@ class SubProc:
             errstr = 'Child returned %i: %s' % (retcode, proc.stderr.read().strip())
             self.bailout(errstr)
 
+def exit(s, die=0):
+    if die:
+        s = 'ERROR: ' + s
+        str_.pollute(s, 1)
+        sys.exit(1)
+    else:
+        str_.pollute(s)
+        sys.exit(0)
 
 if __name__ == '__main__':
     from locale import getdefaultlocale
@@ -790,5 +797,5 @@ if __name__ == '__main__':
         if not argv_.options.nodelete:
             files_.rm()
 
-    str_.pollute('\nFinished succesfully\n')
+    exit(exit_str)
 
