@@ -27,14 +27,14 @@ translate:      title
 #   rg: <commandline>       format-specific replay-gain scanner
 
 [flac]
-decode: flac -dcs %f
-encode: flac -fs -o %f -
+decode: flac -dc %f
+encode: flac -f -o %f -
 rg:     metaflac --add-replay-gain %f
 
 [wv]
-decode: wvunpack -q -o - %f
-encode: wavpack -myiq -o %f -
-rg:     wvgain -aq %f
+decode: wvunpack -o - %f
+encode: wavpack -myi -o %f -
+rg:     wvgain -a %f
 
 [ape]
 decode: mac %f - -d
