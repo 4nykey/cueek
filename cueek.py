@@ -284,13 +284,11 @@ class IO:
         elif cfg_.read('decode'):
             self.rdcmd = cfg_.get_cmdline('decode', [fn])
             subp_.exec_child()
-            (r, e) = (subp_.rdproc.stdout, subp_.rdproc.stderr)
+            r = subp_.rdproc.stdout
         try:
             r = self.wavrd(r)
         except EOFError:
-            errstr = 'Failed to decode "%s": %s\n' % \
-                (fn, e.read().strip().decode(encoding))
-            e.close
+            subp_.wait_for_child()
             exit(errstr, 1)
         return r
     def wav_wr(self):
@@ -453,8 +451,11 @@ class Cue:
                 aud_.get_params()
                 meta_.put('wpar', aud_.params, trknum)
                 aud_.fin.close()
-                try: subp_.rdproc.stdout.close()
-                except AttributeError: pass
+                try:
+                    subp_.rdproc.stdout.close()
+                    os.remove(subp_.rdlog)
+                except (AttributeError, TypeError):
+                    pass
 
                 framenum = aud_.params[3]
                 if not meta_.get('trck', 1):
@@ -723,17 +724,23 @@ class Files:
 class SubProc:
     def __init__(self):
         from subprocess import Popen, PIPE
-        (self.run, self.pipe) = (Popen, PIPE)
-        (self.rdproc, self.wrproc) = 2 * (None, )
+        from tempfile import mkstemp
+        (self.run, self.pipe, self.mktmp) = (Popen, PIPE, mkstemp)
+        (self.rdproc, self.rdlog, self.wrproc, self.wrlog) = 4 * (None,)
         self.cmd = ''
     def bailout(self, str):
         s = 'While running "%s": %s\n' % \
             (' '.join(self.cmd), str.decode(encoding))
         exit(s, 1)
     def exec_child(self, mode='rd'):
-        if mode == 'rd': (pipe, self.cmd) = ('out', io_.rdcmd)
-        else: (pipe, self.cmd) = ('in', io_.wrcmd)
-        p = 'self.run(self.cmd, std' + pipe + '=self.pipe, stderr=self.pipe)'
+        if mode == 'rd':
+            (pipe, self.cmd) = ('out', io_.rdcmd)
+            (self.rddump, self.rdlog) = self.mktmp('rdlog', 'cueek')
+        else:
+            (pipe, self.cmd) = ('in', io_.wrcmd)
+            (self.wrdump, self.wrlog) = self.mktmp('wrlog', 'cueek')
+        p = 'self.run(self.cmd, std%s=self.pipe, stderr=self.%sdump)' % \
+            (pipe, mode)
         try:
             proc = eval(p)
         except OSError, err:
@@ -742,16 +749,22 @@ class SubProc:
         else: self.wrproc = proc
     def wait_for_child(self, mode='rd'):
         retcode = 0
-        if mode == 'rd': proc = self.rdproc
-        else: proc = self.wrproc
+        if mode == 'rd':
+            (proc, f) = (self.rdproc, self.rdlog)
+        else:
+            (proc, f) = (self.wrproc, self.wrlog)
         try:
             retcode = proc.wait()
+            log = open(f)
+            msgs = log.read().strip()
+            log.close()
+            os.remove(f)
             proc.stdin.close()
             proc.stdout.close()
         except AttributeError:
             pass
         if retcode:
-            errstr = 'Child returned %i: %s' % (retcode, proc.stderr.read().strip())
+            errstr = 'Child returned %i: %s' % (retcode, msgs)
             self.bailout(errstr)
 
 def exit(s, die=0):
