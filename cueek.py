@@ -2,7 +2,6 @@
 import sys
 import os
 import re
-from subprocess import Popen, PIPE
 
 DFLT_CFG="""
 # these below are available for filename generation and tagging:
@@ -283,11 +282,10 @@ class IO:
         cfg_.section = ext.encode(encoding)
         if ext == 'wav':
             r = self.tryfile('rb')
-            p = None
         elif cfg_.read('decode'):
             self.rdcmd = cfg_.get_cmdline('decode', [fn])
-            p = Popen(self.rdcmd, stdout=PIPE, stderr=PIPE)
-            (r, e) = (p.stdout, p.stderr)
+            subp_.exec_child()
+            (r, e) = (subp_.rdproc.stdout, subp_.rdproc.stderr)
         try:
             r = self.wavrd(r)
         except EOFError:
@@ -295,18 +293,17 @@ class IO:
                 (fn, e.read().strip().decode(encoding))
             e.close
             str_.pollute(errstr, die=1)
-        return (r, p)
+        return r
     def wav_wr(self):
         cfg_.section = argv_.format
         tag_str = ''
         if argv_.format == 'wav':
             w = self.tryfile('wb')
-            p = None
         elif cfg_.read('encode'):
             self.wrcmd = cfg_.get_cmdline('encode', [self.fname])
-            p = Popen(self.wrcmd, stdin=PIPE, stderr=PIPE)
-            w = p.stdin
-        return (w, p)
+            subp_.exec_child('wr')
+            w = subp_.wrproc.stdin
+        return w
 
 class Audio:
     def __init__(self):
@@ -336,27 +333,15 @@ class Audio:
             self.fout.write(frames)
         frames = self.fin.readframes(self.frnum%step) # leftovers
         self.fout.write(frames)
-    def wait_for_child(self, proc, cmd):
-        retcode = 0
-        try:
-            retcode = proc.wait()
-            proc.stdin.close()
-            proc.stdout.close()
-        except AttributeError:
-            pass
-        if retcode:
-            errstr = 'Error while running "%s": %s\n' % \
-                (cmd, proc.stderr.read().strip().decode(encoding))
-            str_.pollute(errstr, die=1)
     def write(self, _if='', _of=''):
         if _of: # merging to one file
             io_.fname = _of
-            (self.fout, child_enc) = io_.wav_wr()
+            self.fout = io_.wav_wr()
             # wave header with number of samples equal to sum of input files
             self.hdr_frnum = reduce(lambda x, y: x+y, files_.lgth)
             for x in xrange(len(files_.list)):
                 io_.fname = files_.list[x]
-                (self.fin, child_dec) = io_.wav_rd()
+                self.fin = io_.wav_rd()
                 self.frnum = files_.lgth[x]
 
                 abs_pos = 0
@@ -367,15 +352,15 @@ class Audio:
 
                 self.wr_chunks()
                 if self.hdr_frnum: self.hdr_frnum = 0 # write header only once
-                self.wait_for_child(child_dec, io_.rdcmd)
+                subp_.wait_for_child()
                 self.fin.close()
             self.fout.close()
-            self.wait_for_child(child_enc, io_.wrcmd)
+            subp_.wait_for_child('wr')
             io_.fname = _of
             meta_.tag()
         elif _if: # splitting to multiple files
             io_.fname = _if
-            (self.fin, child_dec) = io_.wav_rd()
+            self.fin = io_.wav_rd()
             for x in xrange(len(files_.list)):
                 if x >= argv_.tracks[-1]:
                     child_dec = None
@@ -385,9 +370,9 @@ class Audio:
                 io_.fname = files_.list[x]
                 if not io_.fname:
                     io_.fname = os.devnull
-                    (self.fout, child_enc) = (io_.tryfile('wb'), None)
+                    self.fout = io_.tryfile('wb')
                 else:
-                    (self.fout, child_enc) = io_.wav_wr()
+                    self.fout = io_.wav_wr()
                 self.hdr_frnum = self.frnum = files_.lgth[x]
 
                 statstr = '%s > %s # %s\n' % \
@@ -396,10 +381,10 @@ class Audio:
 
                 self.wr_chunks()
                 self.fout.close()
-                self.wait_for_child(child_enc, io_.wrcmd)
+                subp_.wait_for_child('wr')
                 meta_.tag(t)
-            self.wait_for_child(child_dec, io_.rdcmd)
             self.fin.close()
+#           subp_.wait_for_child()
 
 class Cue:
     def __init__(self):
@@ -465,11 +450,11 @@ class Cue:
                 if self.ref_file:
                     ref_file = self.ref_file
                 io_.fname = ref_file
-                (aud_.fin, proc) = io_.wav_rd()
+                aud_.fin = io_.wav_rd()
                 aud_.get_params()
                 meta_.put('wpar', aud_.params, trknum)
                 aud_.fin.close()
-                try: proc.stdout.close()
+                try: subp_.rdproc.stdout.close()
                 except AttributeError: pass
 
                 framenum = aud_.params[3]
@@ -724,9 +709,9 @@ class Files:
                 statstr = 'RG* (%s)\n' % (', '.join(self.list))
                 str_.pollute(statstr, override=1)
 
-                cmd = cfg_.get_cmdline('rg', self.list)
-                p = Popen(cmd, stdout=PIPE, stderr=PIPE)
-                aud_.wait_for_child(p, cmd)
+                io_.rdcmd = cfg_.get_cmdline('rg', self.list)
+                subp_.exec_child()
+                subp_.wait_for_child()
     def rm(self):
         str_.pollute('\nDeleting files...\n\n')
         n = meta_.get('numoftracks')
@@ -736,6 +721,40 @@ class Files:
                 str_.pollute('<<< %s\n' % f, override=1)
                 os.remove(f)
 
+class SubProc:
+    def __init__(self):
+        from subprocess import Popen, PIPE
+        (self.run, self.pipe) = (Popen, PIPE)
+        (self.rdproc, self.wrproc) = 2 * (None, )
+        self.cmd = ''
+    def bailout(self, str):
+        s = 'While running "%s": %s\n' % \
+            (' '.join(self.cmd), str.decode(encoding))
+        str_.pollute(s, die=1)
+    def exec_child(self, mode='rd'):
+        if mode == 'rd': (pipe, self.cmd) = ('out', io_.rdcmd)
+        else: (pipe, self.cmd) = ('in', io_.wrcmd)
+        p = 'self.run(self.cmd, std' + pipe + '=self.pipe, stderr=self.pipe)'
+        try:
+            proc = eval(p)
+        except OSError, err:
+            self.bailout('Cannot execute the program: %s' % err.strerror)
+        if mode == 'rd': self.rdproc = proc
+        else: self.wrproc = proc
+    def wait_for_child(self, mode='rd'):
+        retcode = 0
+        if mode == 'rd': proc = self.rdproc
+        else: proc = self.wrproc
+        try:
+            retcode = proc.wait()
+            proc.stdin.close()
+            proc.stdout.close()
+        except AttributeError:
+            pass
+        if retcode:
+            errstr = 'Child returned %i: %s' % (retcode, proc.stderr.read().strip())
+            self.bailout(errstr)
+
 
 if __name__ == '__main__':
     from locale import getdefaultlocale
@@ -743,6 +762,7 @@ if __name__ == '__main__':
 
     argv_ = Argv()
     str_ = Strings()
+    subp_ = SubProc()
     io_ = IO()
     cfg_ = Config()
     meta_ = Meta()
