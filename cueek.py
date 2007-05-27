@@ -251,6 +251,9 @@ class Meta:
 
 class Audio:
     def __init__(self):
+        from mutagen import version as v
+        self.use_mutagen = False
+        if v >= (1,11): self.use_mutagen = True
         from struct import pack
         self.pack = pack
         from wave import Wave_read, WAVE_FORMAT_PCM
@@ -261,8 +264,21 @@ class Audio:
         self.msfstr = '\d{1,2}:\d\d:\d\d'
         self.smpl_freq = 0
     def get_params(self):
-        self.wav_rd()
-        self.params = self.fin.getparams()
+        f = meta_.mutagen(self.fname)
+        if hasattr(f, 'info') and self.use_mutagen:
+            f = f.info
+            ch, sr = f.channels, f.sample_rate
+            if hasattr(f,'bits_per_sample') : sw = f.bits_per_sample / 8
+            else                            : sw = 2 # assume cdda
+            if hasattr(f,'total_samples')   : sn = f.total_samples
+            else                            : sn = f.length * sr
+            self.params = (ch, sw, sr, long(sn), None, None)
+        else:
+            self.wav_rd()
+            self.params = self.fin.getparams()
+            self.fin.close()
+            if subp_.rdproc: subp_.rdproc.stdout.close()
+            subp_.wait_for_child(kill=1)
         if not self.smpl_freq: self.smpl_freq = self.params[2]
     def gen_hdr(self): # taken from `wave' module
         par = self.params
