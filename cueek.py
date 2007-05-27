@@ -632,7 +632,7 @@ class Files:
                     if meta_.get('lgth', x):
                         if meta_.get('idx1', 1) and not option_.notrk0: t = x
                         else                                          : t = x+1
-                        if x >= argv_.tracks[-1]:
+                        if x > argv_.tracks[-1]:
                             aud_.fin.close()
                             exit(exit_str)
                         elif x in argv_.tracks:
