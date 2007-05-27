@@ -147,26 +147,6 @@ class Config:
             list = [x.strip() for x in self.read(s).upper().split(',')]
         return list
 
-class Strings:
-    def __init__(self):
-        self.msfstr = '\d{1,2}:\d\d:\d\d'
-    def getlength(self, n):
-        ms, fr = divmod(n, smpl_freq)
-        m, s = divmod(ms, 60)
-        f = fr / (smpl_freq / 75)
-        s = ':'.join([str(x).zfill(2) for x in m,s,f])
-        return s
-    def getidx(self, s):
-        mm, ss, ff = [int(x[-2:]) for x in s.strip().split(':')]
-        idx = ((mm * 60 + ss) * smpl_freq + ff * (smpl_freq / 75))
-        return idx
-    def linehas(self, n, s):
-        result = 0
-        if re.search(n+'\s+'+self.msfstr, s, re.I): result = 1
-        return result
-    def repl_time(self, n, s):
-        return re.sub(self.msfstr, self.getlength(n), s)
-
 class Meta:
     def __init__(self):
         from mutagen import File, musepack, mp3, id3
@@ -278,9 +258,12 @@ class Audio:
         self.fname, self.rdcmd, self.wrcmd = 3 * ['']
         self.frnum, self.hdr_frnum = 2 * [0]
         self.params, self.fin, self.fout = 3 * [None]
+        self.msfstr = '\d{1,2}:\d\d:\d\d'
+        self.smpl_freq = 0
     def get_params(self):
         self.wav_rd()
         self.params = self.fin.getparams()
+        if not self.smpl_freq: self.smpl_freq = self.params[2]
     def gen_hdr(self): # taken from `wave' module
         par = self.params
         len = self.hdr_frnum * par[0] * par[1]
@@ -289,7 +272,7 @@ class Audio:
             par[0] * par[1], par[1] * 8, 'data', len)
         return hdr
     def wr_chunks(self):
-        step = smpl_freq * 10 # 10s chunks
+        step = self.smpl_freq * 10 # 10s chunks
         if self.hdr_frnum:
             hdr = self.gen_hdr()
             self.fout.write(hdr)
@@ -322,6 +305,20 @@ class Audio:
             subp_.exec_child('wr')
             w = subp_.wrproc.stdin
         self.fout = w
+    def getlength(self, n):
+        ms, fr = divmod(n, self.smpl_freq)
+        m, s = divmod(ms, 60)
+        f = fr / (self.smpl_freq / 75)
+        return ':'.join([str(x).zfill(2) for x in m,s,f])
+    def getidx(self, s):
+        mm, ss, ff = [int(x[-2:]) for x in s.strip().split(':')]
+        return ((mm * 60 + ss) * self.smpl_freq + ff * (self.smpl_freq / 75))
+    def linehas(self, n, s):
+        result = 0
+        if re.search(n+'\s+'+self.msfstr, s, re.I): result = 1
+        return result
+    def repl_time(self, n, s):
+        return re.sub(self.msfstr, self.getlength(n), s)
 
 class Cue:
     def __init__(self):
@@ -360,8 +357,6 @@ class Cue:
         return (m, ''.join(lst))
     def parse(self):
         trknum = 1
-        global smpl_freq
-        smpl_freq = 0
         for line in [s.lstrip() for s in self.sheet]:
             tn = 'album'
             if re.search('^PERFORMER\s+"', line, re.I):
@@ -387,10 +382,6 @@ class Cue:
                 if self.ref_file: ref_file = self.ref_file
                 aud_.fname = ref_file
                 aud_.get_params()
-                if not smpl_freq: smpl_freq = aud_.params[2]
-                aud_.fin.close()
-                if subp_.rdproc: subp_.rdproc.stdout.close()
-                subp_.wait_for_child(kill=1)
 
                 framenum = aud_.params[3]
                 if not meta_.get('trck', 1):
@@ -409,13 +400,13 @@ class Cue:
                 meta_.put('apos', abs_pos, trknum)
             elif re.search('^TRACK\s+\d+\s+AUDIO', line, re.I):
                 meta_.put('trck', 1, trknum)
-            elif str_.linehas('^PREGAP\s+', line):
-                self.pregap = str_.getidx(line)
-            elif str_.linehas('^INDEX\s+00', line):
-                idx_pos = str_.getidx(line)
+            elif aud_.linehas('^PREGAP\s+', line):
+                self.pregap = aud_.getidx(line)
+            elif aud_.linehas('^INDEX\s+00', line):
+                idx_pos = aud_.getidx(line)
                 meta_.put('idx0', idx_pos, trknum)
-            elif str_.linehas('^INDEX\s+01', line):
-                idx_pos = str_.getidx(line)
+            elif aud_.linehas('^INDEX\s+01', line):
+                idx_pos = aud_.getidx(line)
                 meta_.put('idx1', idx_pos, trknum)
                 trknum += 1
         if not meta_.get('lgth', 1):
@@ -477,34 +468,34 @@ class Cue:
                     wav_file = '"' + wav_file + '"'
                     line = re.sub('".+"', wav_file, line)
                     cue.append(line)
-            elif str_.linehas('^INDEX\s+00', lstr):
+            elif aud_.linehas('^INDEX\s+00', lstr):
                 if self.is_noncompl:
                     gap = meta_.get('lgth', trknum-1) - \
                         meta_.get('idx0', trknum)
                     idx00 = meta_.get('apos', trknum-1) - gap
-                    line = str_.repl_time(idx00, line)
+                    line = aud_.repl_time(idx00, line)
                 elif self.is_compl:
                     gap = meta_.get('idx1', trknum)
                     idx00 = meta_.get('apos', trknum-1)
-                    line = str_.repl_time(idx00, line)
+                    line = aud_.repl_time(idx00, line)
                 elif self.is_singlefile:
                     if meta_.get('idx0', trknum) or \
                     (trknum == 1 and meta_.get('idx1', trknum)):
                         gap = meta_.get('idx1', trknum) - \
                             meta_.get('idx0', trknum)
                     if not option_.noncompl:
-                        line = str_.repl_time(0, line)
+                        line = aud_.repl_time(0, line)
                     elif trknum > 1 or not option_.notrk0:
                         trk_length = meta_.get('idx1', trknum) - \
                             meta_.get('idx1', trknum-1)
                         idx00 = trk_length - gap
                         if not (trknum == 2 and option_.notrk0):
-                            line = str_.repl_time(idx00, line)
+                            line = aud_.repl_time(idx00, line)
                         line += 'FILE "' + \
                             meta_.filename(trknum) + '" WAVE\n'
                 meta_.put('gap', gap, trknum)
                 cue.append(line)
-            elif str_.linehas('^INDEX\s+01', lstr):
+            elif aud_.linehas('^INDEX\s+01', lstr):
                 if self.is_singlefile:
                     idx01 = 0
                     if trknum == 1:
@@ -518,14 +509,14 @@ class Cue:
                         (option_.noncompl and not meta_.get('idx0', trknum+1)):
                             line += 'FILE "' + \
                                 meta_.filename(trknum+1) + '" WAVE\n'
-                    line = str_.repl_time(idx01, line)
+                    line = aud_.repl_time(idx01, line)
                 elif self.is_noncompl and trknum > 1:
                     idx01 = meta_.get('apos', trknum-1)
-                    line = str_.repl_time(idx01, line)
+                    line = aud_.repl_time(idx01, line)
                 else:
                     idx01 = meta_.get('apos', trknum-1) + \
                         meta_.get('idx1', trknum)
-                    line = str_.repl_time(idx01, line)
+                    line = aud_.repl_time(idx01, line)
                 cue.append(line)
                 trknum += 1
                 gap = 0
@@ -583,19 +574,19 @@ class Cue:
                 real_length = meta_.get('lgth', trknum)
                 length = real_length - gap
                 trk_str = 'Track %s (%s)\n' % \
-                    (str(trknum).zfill(2), str_.getlength(real_length))
-                lgth_str = ' content: %s\n' % (str_.getlength(length))
+                    (str(trknum).zfill(2), aud_.getlength(real_length))
+                lgth_str = ' content: %s\n' % (aud_.getlength(length))
             if self.pregap > 0 and trknum == 1:
-                statstr += 'Pregap   (%s)\n' % (str_.getlength(self.pregap))
+                statstr += 'Pregap   (%s)\n' % (aud_.getlength(self.pregap))
             statstr += trk_str
             if gap:
-                gap_str = '     gap: %s\n' % (str_.getlength(gap))
+                gap_str = '     gap: %s\n' % (aud_.getlength(gap))
                 if want_compliant:
                     statstr += gap_str + lgth_str
                 else:
                     statstr += lgth_str + gap_str
         statstr += 19 * '-' + '\n         (%s)\n' % \
-            (str_.getlength(meta_.get('duration')))
+            (aud_.getlength(meta_.get('duration')))
         pollute(statstr)
     def save(self):
         cue = ''.join(self.sheet)
@@ -637,7 +628,7 @@ class Files:
                             aud_.fout = tryfile(aud_.fname, 'wb')
                         aud_.hdr_frnum = aud_.frnum = meta_.get('lgth', x)
                         statstr = '%s > %s # %s\n' % \
-                            (_if, aud_.fname, str_.getlength(aud_.frnum))
+                            (_if, aud_.fname, aud_.getlength(aud_.frnum))
                         pollute(statstr, 1)
 
                         aud_.wr_chunks()
@@ -665,7 +656,7 @@ class Files:
                     abs_pos = 0
                     if x: abs_pos = reduce(lambda x, y: x+y, self.lgth[:x])
                     statstr = '%s >> %s @ %s\n' % \
-                        (aud_.fname, _of, str_.getlength(abs_pos))
+                        (aud_.fname, _of, aud_.getlength(abs_pos))
                     pollute(statstr, 1)
 
                     aud_.wr_chunks()
@@ -759,7 +750,6 @@ def tryfile(fn, mode='r'):
 
 argv_ = Argv()
 option_ = argv_.opts
-str_ = Strings()
 subp_ = SubProc()
 cfg_ = Config()
 meta_ = Meta()
