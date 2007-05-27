@@ -321,11 +321,11 @@ class Audio:
             subp_.exec_child('wr')
             w = subp_.wrproc.stdin
         self.fout = w
-    def getlength(self, n):
+    def getlength(self, n, sep=':'):
         ms, fr = divmod(n, self.smpl_freq)
         m, s = divmod(ms, 60)
         f = fr / (self.smpl_freq / 75)
-        return ':'.join([str(x).zfill(2) for x in m,s,f])
+        return sep.join([str(x).zfill(2) for x in m,s,f])
     def getidx(self, s):
         mm, ss, ff = [int(x[-2:]) for x in s.strip().split(':')]
         return ((mm * 60 + ss) * self.smpl_freq + ff * (self.smpl_freq / 75))
@@ -431,6 +431,7 @@ class Cue:
             del meta_.data['00lgth']
         meta_.put('numoftracks', trknum)
         meta_.put('duration', abs_pos)
+        meta_.put('spos', abs_pos, trknum)
         self.type()
     def type(self):
         gaps_present, self.is_va = 2 * [0]
@@ -642,9 +643,12 @@ class Files:
                         else:
                             aud_.fname = os.devnull
                             aud_.fout = tryfile(aud_.fname, 'wb')
-                        aud_.hdr_frnum = aud_.frnum = meta_.get('lgth', x)
-                        statstr = '%s > %s # %s\n' % \
-                            (_if, aud_.fname, aud_.getlength(aud_.frnum))
+                        scurr = meta_.get('spos', x)
+                        snext = meta_.get('spos', x+1)
+                        aud_.hdr_frnum = aud_.frnum = snext - scurr
+                        statstr = '%s[%s:%s] > %s\n' % \
+                            (_if, aud_.getlength(scurr,'.'),
+                            aud_.getlength(snext,'.'), aud_.fname)
                         pollute(statstr, 1)
 
                         aud_.wr_chunks()
