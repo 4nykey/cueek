@@ -465,8 +465,8 @@ class Cue:
     def modify(self):
         trknum, gap, cue, wav_file = (1, 0, [], '')
         abs_pos = meta_.get('duration')
-        for x in xrange(len(self.sheet)):
-            line = self.sheet[x].rstrip() + os.linesep
+        for line in self.sheet:
+            line = line.rstrip() + os.linesep
             lstr = line.lstrip()
             if re.search('^PERFORMER|TITLE', lstr, re.I):
                 line = self.dblquotes(line)[1]
@@ -792,7 +792,6 @@ def main(fn):
 
     cue_.probe(fn)
     cue_.parse()
-
     cue_.modify()
     if cue_.is_singlefile:
         cue_.lengths()
