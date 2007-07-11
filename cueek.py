@@ -265,7 +265,8 @@ class Audio:
         self.smpl_freq = 0
     def get_params(self):
         f = meta_.mutagen(self.fname)
-        if hasattr(f, 'info') and self.use_mutagen:
+        if hasattr(f, 'info') and hasattr(f.info, 'sample_rate') and \
+        self.use_mutagen:
             f = f.info
             ch, sr = f.channels, f.sample_rate
             if hasattr(f,'bits_per_sample') : sw = f.bits_per_sample / 8
