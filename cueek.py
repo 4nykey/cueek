@@ -470,7 +470,7 @@ class Cue:
         for line in self.sheet:
             line = line.rstrip() + os.linesep
             lstr = line.lstrip()
-            if re.search('^PERFORMER|TITLE', lstr, re.I):
+            if re.search('^(PERFORMER|TITLE)\s+', lstr, re.I):
                 line = self.dblquotes(line)[1]
                 cue.append(line)
             elif re.search('^FILE\s+', lstr, re.I):
@@ -510,7 +510,7 @@ class Cue:
                         if not (trknum == 2 and option_.notrk0):
                             line = aud_.repl_time(idx00, line)
                         line += 'FILE "' + \
-                            meta_.filename(trknum) + '" WAVE\n'
+                            meta_.filename(trknum) + '" WAVE' + os.linesep
                 meta_.put('gap', gap, trknum)
                 cue.append(line)
             elif aud_.linehas('^INDEX\s+01', lstr):
@@ -526,7 +526,7 @@ class Cue:
                         if not option_.noncompl or \
                         (option_.noncompl and not meta_.get('idx0', trknum+1)):
                             line += 'FILE "' + \
-                                meta_.filename(trknum+1) + '" WAVE\n'
+                                meta_.filename(trknum+1) + '" WAVE' + os.linesep
                     line = aud_.repl_time(idx01, line)
                 elif self.is_noncompl and trknum > 1:
                     idx01 = meta_.get('apos', trknum-1)
