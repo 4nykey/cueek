@@ -590,9 +590,12 @@ class Cue:
                 gap = meta_.get('gap', trknum+1)
             if meta_.get('lgth', trknum):
                 real_length = meta_.get('lgth', trknum)
+                abs_pos = meta_.get('apos', trknum-1)
+                abs_pos_next = meta_.get('apos', trknum)
                 length = real_length - gap
-                trk_str = 'Track %s (%s)\n' % \
-                    (str(trknum).zfill(2), aud_.getlength(real_length))
+                trk_str = 'Track %s (%s) [ %s - %s ]\n' % \
+                    (str(trknum).zfill(2), aud_.getlength(real_length),
+                    aud_.getlength(abs_pos), aud_.getlength(abs_pos_next))
                 lgth_str = ' content: %s\n' % (aud_.getlength(length))
             if self.pregap > 0 and trknum == 1:
                 statstr += 'Pregap   (%s)\n' % (aud_.getlength(self.pregap))
