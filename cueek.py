@@ -426,13 +426,13 @@ class Cue:
                 meta_.put('trck', 1, trknum)
             elif aud_.linehas('^PREGAP\s+', line):
                 self.pregap = aud_.getidx(line)
-            elif aud_.linehas('^INDEX\s+00', line):
+            elif aud_.linehas('^INDEX\s+\d\d', line):
                 idx_pos = aud_.getidx(line)
-                meta_.put('idx0', idx_pos, trknum)
-            elif aud_.linehas('^INDEX\s+01', line):
-                idx_pos = aud_.getidx(line)
-                meta_.put('idx1', idx_pos, trknum)
-                trknum += 1
+                idx_num = int(line.split()[1])
+                tn = trknum
+                if idx_num > 1: tn = trknum - 1
+                meta_.put('idx%.2u' % idx_num, idx_pos, tn)
+                if idx_num == 1: trknum += 1
         if not meta_.get('lgth', 1):
             exit('Failed to get the length of referenced file', 1)
         if not self.trackzero_present:
@@ -448,12 +448,12 @@ class Cue:
             cue_type = 'single-file'
         else:
             for x in xrange(2, meta_.get('numoftracks')):
-                if meta_.get('idx0', x):
+                if meta_.get('idx00', x):
                     cue_type = 'non-compliant'
                     gaps_present = 1
                     self.is_noncompl = 1
                     break
-                elif meta_.get('idx1', x):
+                elif meta_.get('idx01', x):
                     cue_type = 'compliant'
                     self.is_compl = 1
                     break
@@ -483,7 +483,7 @@ class Cue:
             elif re.search('^FILE\s+', lstr, re.I):
                 if not wav_file or self.is_singlefile:
                     if self.is_singlefile:
-                        if meta_.get('idx1', trknum) and option_.noncompl and \
+                        if meta_.get('idx01', trknum) and option_.noncompl and \
                         not option_.notrk0:
                             wav_file = meta_.filename(trknum-1)
                         else:
@@ -496,23 +496,23 @@ class Cue:
             elif aud_.linehas('^INDEX\s+00', lstr):
                 if self.is_noncompl:
                     gap = meta_.get('lgth', trknum-1) - \
-                        meta_.get('idx0', trknum)
+                        meta_.get('idx00', trknum)
                     idx00 = meta_.get('apos', trknum-1) - gap
                     line = aud_.repl_time(idx00, line)
                 elif self.is_compl:
-                    gap = meta_.get('idx1', trknum)
+                    gap = meta_.get('idx01', trknum)
                     idx00 = meta_.get('apos', trknum-1)
                     line = aud_.repl_time(idx00, line)
                 elif self.is_singlefile:
-                    if meta_.get('idx0', trknum) or \
-                    (trknum == 1 and meta_.get('idx1', trknum)):
-                        gap = meta_.get('idx1', trknum) - \
-                            meta_.get('idx0', trknum)
+                    if meta_.get('idx00', trknum) or \
+                    (trknum == 1 and meta_.get('idx01', trknum)):
+                        gap = meta_.get('idx01', trknum) - \
+                            meta_.get('idx00', trknum)
                     if not option_.noncompl:
                         line = aud_.repl_time(0, line)
                     elif trknum > 1 or not option_.notrk0:
-                        trk_length = meta_.get('idx1', trknum) - \
-                            meta_.get('idx1', trknum-1)
+                        trk_length = meta_.get('idx01', trknum) - \
+                            meta_.get('idx01', trknum-1)
                         idx00 = trk_length - gap
                         if not (trknum == 2 and option_.notrk0):
                             line = aud_.repl_time(idx00, line)
@@ -525,13 +525,13 @@ class Cue:
                     idx01 = 0
                     if trknum == 1:
                         if not option_.noncompl or \
-                        (meta_.get('idx1', trknum) and option_.notrk0):
-                            idx01 = meta_.get('idx1', trknum)
-                    elif not option_.noncompl and meta_.get('idx0', trknum):
+                        (meta_.get('idx01', trknum) and option_.notrk0):
+                            idx01 = meta_.get('idx01', trknum)
+                    elif not option_.noncompl and meta_.get('idx00', trknum):
                         idx01 = gap
-                    if meta_.get('idx1', trknum+1):
+                    if meta_.get('idx01', trknum+1):
                         if not option_.noncompl or \
-                        (option_.noncompl and not meta_.get('idx0', trknum+1)):
+                        (option_.noncompl and not meta_.get('idx00', trknum+1)):
                             line += 'FILE "' + \
                                 meta_.filename(trknum+1) + '" WAVE' + os.linesep
                     line = aud_.repl_time(idx01, line)
@@ -540,7 +540,7 @@ class Cue:
                     line = aud_.repl_time(idx01, line)
                 else:
                     idx01 = meta_.get('apos', trknum-1) + \
-                        meta_.get('idx1', trknum)
+                        meta_.get('idx01', trknum)
                     line = aud_.repl_time(idx01, line)
                 cue.append(line)
                 trknum += 1
@@ -554,27 +554,27 @@ class Cue:
         if self.trackzero_present: start = 0
         for trknum in xrange(start, meta_.get('numoftracks')):
             if not option_.noncompl:
-                if trknum > 1 and not meta_.get('idx0', trknum):
-                    start_pos = meta_.get('idx1', trknum)
+                if trknum > 1 and not meta_.get('idx00', trknum):
+                    start_pos = meta_.get('idx01', trknum)
                 else:
-                    start_pos = meta_.get('idx0', trknum)
-                if not meta_.get('idx1', trknum+1):
+                    start_pos = meta_.get('idx00', trknum)
+                if not meta_.get('idx01', trknum+1):
                     end_pos = abs_pos
-                elif not meta_.get('idx0', trknum+1):
-                    end_pos = meta_.get('idx1', trknum+1)
+                elif not meta_.get('idx00', trknum+1):
+                    end_pos = meta_.get('idx01', trknum+1)
                 else:
-                    end_pos = meta_.get('idx0', trknum+1)
+                    end_pos = meta_.get('idx00', trknum+1)
             else:
-                start_pos = meta_.get('idx1', trknum)
-                if meta_.get('idx1', trknum+1):
-                    end_pos = meta_.get('idx1', trknum+1)
+                start_pos = meta_.get('idx01', trknum)
+                if meta_.get('idx01', trknum+1):
+                    end_pos = meta_.get('idx01', trknum+1)
                 else:
                     end_pos = abs_pos
-                if trknum == 1 and meta_.get('idx1', 1):
+                if trknum == 1 and meta_.get('idx01', 1):
                     if option_.notrk0:
                         start_pos = 0
                     else:
-                        length = meta_.get('idx1', 1)
+                        length = meta_.get('idx01', 1)
                         meta_.put('lgth', length, 0)
             trk_length = end_pos - start_pos
             meta_.put('apos', start_pos, trknum-1)
@@ -642,7 +642,7 @@ class Files:
                 aud_.wav_rd()
                 for x in xrange(n):
                     if meta_.get('lgth', x):
-                        if meta_.get('idx1', 1) and not option_.notrk0: t = x
+                        if meta_.get('idx01', 1) and not option_.notrk0: t = x
                         else                                          : t = x+1
                         if x > argv_.tracks[-1]:
                             aud_.fin.close()
