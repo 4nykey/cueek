@@ -58,6 +58,9 @@ class Argv:
         opt_parse.add_option("-v", "--verbose",
             action="store_false", dest="quiet", default=True,
             help="print status messages to stderr")
+        opt_parse.add_option("-s", "--samples",
+            action="store_false", dest="msf", default=True,
+            help="print lengths in samples")
         opt_parse.add_option("-m", "--charmap",
             help="decode cuesheet from specified CHARMAP", metavar="CHARMAP")
         opt_parse.add_option("-o", "--output",
@@ -322,11 +325,15 @@ class Audio:
             subp_.exec_child('wr')
             w = subp_.wrproc.stdin
         self.fout = w
-    def getlength(self, n, sep=':'):
-        ms, fr = divmod(n, self.smpl_freq)
-        m, s = divmod(ms, 60)
-        f = fr / (self.smpl_freq / 75)
-        return sep.join([str(x).zfill(2) for x in m,s,f])
+    def getlength(self, n, sep=':', needmsf=0):
+        if option_.msf or needmsf:
+            ms, fr = divmod(n, self.smpl_freq)
+            m, s = divmod(ms, 60)
+            f = fr / (self.smpl_freq / 75)
+            result = sep.join([str(x).zfill(2) for x in m,s,f])
+        else:
+            result = "%9u" % n
+        return result
     def getidx(self, s):
         mm, ss, ff = [int(x[-2:]) for x in s.strip().split(':')]
         return ((mm * 60 + ss) * self.smpl_freq + ff * (self.smpl_freq / 75))
@@ -335,7 +342,7 @@ class Audio:
         if re.search(n+'\s+'+self.msfstr, s, re.I): result = 1
         return result
     def repl_time(self, n, s):
-        return re.sub(self.msfstr, self.getlength(n), s)
+        return re.sub(self.msfstr, self.getlength(n, needmsf=1), s)
 
 class Cue:
     def __init__(self):
