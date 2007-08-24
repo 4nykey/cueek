@@ -493,58 +493,69 @@ class Cue:
                     wav_file = '"' + wav_file + '"'
                     line = re.sub('".+"', wav_file, line)
                     cue.append(line)
-            elif aud_.linehas('^INDEX\s+00', lstr):
-                if self.is_noncompl:
-                    gap = meta_.get('lgth', trknum-1) - \
-                        meta_.get('idx00', trknum)
-                    idx00 = meta_.get('apos', trknum-1) - gap
-                    line = aud_.repl_time(idx00, line)
-                elif self.is_compl:
-                    gap = meta_.get('idx01', trknum)
-                    idx00 = meta_.get('apos', trknum-1)
-                    line = aud_.repl_time(idx00, line)
-                elif self.is_singlefile:
-                    if meta_.get('idx00', trknum) or \
-                    (trknum == 1 and meta_.get('idx01', trknum)):
-                        gap = meta_.get('idx01', trknum) - \
+            elif aud_.linehas('^INDEX\s+\d\d', lstr):
+                idx_num = int(lstr.split()[1])
+                if idx_num == 0:
+                    if self.is_noncompl:
+                        gap = meta_.get('lgth', trknum-1) - \
                             meta_.get('idx00', trknum)
-                    if not option_.noncompl:
-                        line = aud_.repl_time(0, line)
-                    elif trknum > 1 or not option_.notrk0:
-                        trk_length = meta_.get('idx01', trknum) - \
-                            meta_.get('idx01', trknum-1)
-                        idx00 = trk_length - gap
-                        if not (trknum == 2 and option_.notrk0):
-                            line = aud_.repl_time(idx00, line)
-                        line += 'FILE "' + \
-                            meta_.filename(trknum) + '" WAVE' + os.linesep
-                meta_.put('gap', gap, trknum)
-                cue.append(line)
-            elif aud_.linehas('^INDEX\s+01', lstr):
-                if self.is_singlefile:
-                    idx01 = 0
-                    if trknum == 1:
-                        if not option_.noncompl or \
-                        (meta_.get('idx01', trknum) and option_.notrk0):
-                            idx01 = meta_.get('idx01', trknum)
-                    elif not option_.noncompl and meta_.get('idx00', trknum):
-                        idx01 = gap
-                    if meta_.get('idx01', trknum+1):
-                        if not option_.noncompl or \
-                        (option_.noncompl and not meta_.get('idx00', trknum+1)):
+                        idx00 = meta_.get('apos', trknum-1) - gap
+                        line = aud_.repl_time(idx00, line)
+                    elif self.is_compl:
+                        gap = meta_.get('idx01', trknum)
+                        idx00 = meta_.get('apos', trknum-1)
+                        line = aud_.repl_time(idx00, line)
+                    elif self.is_singlefile:
+                        if meta_.get('idx00', trknum) or \
+                        (trknum == 1 and meta_.get('idx01', trknum)):
+                            gap = meta_.get('idx01', trknum) - \
+                                meta_.get('idx00', trknum)
+                        if not option_.noncompl:
+                            line = aud_.repl_time(0, line)
+                        elif trknum > 1 or not option_.notrk0:
+                            trk_length = meta_.get('idx01', trknum) - \
+                                meta_.get('idx01', trknum-1)
+                            idx00 = trk_length - gap
+                            if not (trknum == 2 and option_.notrk0):
+                                line = aud_.repl_time(idx00, line)
                             line += 'FILE "' + \
-                                meta_.filename(trknum+1) + '" WAVE' + os.linesep
-                    line = aud_.repl_time(idx01, line)
-                elif self.is_noncompl and trknum > 1:
-                    idx01 = meta_.get('apos', trknum-1)
-                    line = aud_.repl_time(idx01, line)
+                                meta_.filename(trknum) + '" WAVE' + os.linesep
+                    meta_.put('gap', gap, trknum)
+                    cue.append(line)
+                elif idx_num == 1:
+                    if self.is_singlefile:
+                        idx01 = 0
+                        if trknum == 1:
+                            if not option_.noncompl or \
+                            (meta_.get('idx01', trknum) and option_.notrk0):
+                                idx01 = meta_.get('idx01', trknum)
+                        elif not option_.noncompl and meta_.get('idx00', trknum):
+                            idx01 = gap
+                        line = aud_.repl_time(idx01, line)
+                    elif self.is_noncompl and trknum > 1:
+                        idx01 = meta_.get('apos', trknum-1)
+                        line = aud_.repl_time(idx01, line)
+                    else:
+                        idx01 = meta_.get('apos', trknum-1) + \
+                            meta_.get('idx01', trknum)
+                        line = aud_.repl_time(idx01, line)
+                    cue.append(line)
+                    trknum += 1
+                    gap = 0
                 else:
-                    idx01 = meta_.get('apos', trknum-1) + \
-                        meta_.get('idx01', trknum)
-                    line = aud_.repl_time(idx01, line)
-                cue.append(line)
-                trknum += 1
-                gap = 0
+                    idx = meta_.get('idx%.2u' % idx_num, trknum-1)
+                    if self.is_singlefile:
+                        idx -= meta_.get('idx01', trknum-1)
+                    else:
+                        idx += meta_.get('apos', trknum-2)
+                    line = aud_.repl_time(idx, line)
+                    cue.append(line)
+                if not meta_.get('idx%.2u' % (idx_num+1), trknum-1) \
+                and idx_num and meta_.get('idx01', trknum) \
+                and self.is_singlefile and (not option_.noncompl or
+                (option_.noncompl and not meta_.get('idx00', trknum))):
+                    cue.append('FILE "%s" WAVE%s' % \
+                    (meta_.filename(trknum), os.linesep))
             else:
                 cue.append(line)
         self.sheet = cue
