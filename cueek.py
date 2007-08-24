@@ -545,6 +545,8 @@ class Cue:
                     idx = meta_.get('idx%.2u' % idx_num, trknum-1)
                     if self.is_singlefile:
                         idx -= meta_.get('idx01', trknum-1)
+                        if not option_.noncompl:
+                            idx += meta_.get('gap', trknum-1)
                     else:
                         idx += meta_.get('apos', trknum-2)
                     line = aud_.repl_time(idx, line)
