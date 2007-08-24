@@ -483,15 +483,14 @@ class Cue:
             elif re.search('^FILE\s+', lstr, re.I):
                 if not wav_file or self.is_singlefile:
                     if self.is_singlefile:
-                        if meta_.get('idx01', trknum) and option_.noncompl and \
-                        not option_.notrk0:
+                        if meta_.get('idx01', trknum) and \
+                        option_.noncompl and not option_.notrk0:
                             wav_file = meta_.filename(trknum-1)
                         else:
                             wav_file = meta_.filename(trknum)
                     else:
                         wav_file = meta_.filename(trknum)
-                    wav_file = '"' + wav_file + '"'
-                    line = re.sub('".+"', wav_file, line)
+                    line = re.sub('".+"', '"%s"' % wav_file, line)
                     cue.append(line)
             elif aud_.linehas('^INDEX\s+\d\d', lstr):
                 idx_num = int(lstr.split()[1])
@@ -654,7 +653,7 @@ class Files:
                 for x in xrange(n):
                     if meta_.get('lgth', x):
                         if meta_.get('idx01', 1) and not option_.notrk0: t = x
-                        else                                          : t = x+1
+                        else: t = x+1
                         if x > argv_.tracks[-1]:
                             aud_.fin.close()
                             exit(exit_str)
@@ -702,7 +701,8 @@ class Files:
                     pollute(statstr, 1)
 
                     aud_.wr_chunks()
-                    if aud_.hdr_frnum: aud_.hdr_frnum = 0 # write header only once
+                    # write header only once
+                    if aud_.hdr_frnum: aud_.hdr_frnum = 0
                     subp_.wait_for_child()
                     aud_.fin.close()
 
