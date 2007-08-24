@@ -432,7 +432,7 @@ class Cue:
             del meta_.data['00lgth']
         meta_.put('numoftracks', trknum)
         meta_.put('duration', abs_pos)
-        meta_.put('spos', abs_pos, trknum)
+        meta_.put('apos', abs_pos, trknum-1)
         self.type()
     def type(self):
         gaps_present, self.is_va = 2 * [0]
@@ -570,7 +570,7 @@ class Cue:
                         length = meta_.get('idx1', 1)
                         meta_.put('lgth', length, 0)
             trk_length = end_pos - start_pos
-            meta_.put('spos', start_pos, trknum)
+            meta_.put('apos', start_pos, trknum-1)
             meta_.put('lgth', trk_length, trknum)
     def print_(self):
         statstr = "This cuesheet appears to be of '" + self.type
@@ -644,8 +644,8 @@ class Files:
                         else:
                             aud_.fname = os.devnull
                             aud_.fout = tryfile(aud_.fname, 'wb')
-                        scurr = meta_.get('spos', x)
-                        snext = meta_.get('spos', x+1)
+                        scurr = meta_.get('apos', x-1)
+                        snext = meta_.get('apos', x)
                         aud_.hdr_frnum = aud_.frnum = snext - scurr
                         statstr = '%s[%s:%s] > %s\n' % \
                             (_if, aud_.getlength(scurr,'.'),
